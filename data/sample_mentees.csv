@@ -1,0 +1,21 @@
+Timestamp,Email Address,First & Last Name,What level of Education you are currently pursuing or considering?,What is your major(s),Have you ever participated in this or another mentoring program?
+1/21/2026 08:05:00,mentee01@sample.edu,Mentee 01,"Undergraduate, Masters","Electrical Engineering (B.S. or M.S), Electrical Power Systems (M.S), Computer Networking (M.S.)",No
+1/21/2026 08:10:00,mentee02@sample.edu,Mentee 02,Masters,"Electrical Engineering (B.S. or M.S), Computer Engineering (B.S. or M.S), Electrical Power Systems (M.S)",No
+1/21/2026 08:15:00,mentee03@sample.edu,Mentee 03,Masters,"Electrical Engineering (B.S. or M.S), Computer Engineering (B.S. or M.S)",No
+1/21/2026 08:20:00,mentee04@sample.edu,Mentee 04,PHD,"Electrical Engineering (B.S. or M.S), Electrical Power Systems (M.S)",No
+1/21/2026 08:25:00,mentee05@sample.edu,Mentee 05,PHD,"Electrical Power Systems (M.S), Electrical Engineering (B.S. or M.S), Computer Networking (M.S.)",Yes
+1/21/2026 08:30:00,mentee06@sample.edu,Mentee 06,"Undergraduate, PHD",Electrical Power Systems (M.S),No
+1/21/2026 08:35:00,mentee07@sample.edu,Mentee 07,Masters,"Computer Engineering (B.S. or M.S), Electrical Engineering (B.S. or M.S)",No
+1/21/2026 08:40:00,mentee08@sample.edu,Mentee 08,"PHD, Undergraduate",Electrical Power Systems (M.S),No
+1/21/2026 08:45:00,mentee09@sample.edu,Mentee 09,Masters,Electrical Power Systems (M.S),No
+1/21/2026 08:50:00,mentee10@sample.edu,Mentee 10,PHD,Electrical Power Systems (M.S),Yes
+1/21/2026 08:55:00,mentee11@sample.edu,Mentee 11,Masters,"Electrical Power Systems (M.S), Cybersecurity (M.S), Computer Engineering (B.S. or M.S)",No
+1/21/2026 09:00:00,mentee12@sample.edu,Mentee 12,"PHD, Masters","Computer Networking (M.S.), Computer Engineering (B.S. or M.S)",No
+1/21/2026 09:05:00,mentee13@sample.edu,Mentee 13,PHD,Electrical Engineering (B.S. or M.S),No
+1/21/2026 09:10:00,mentee14@sample.edu,Mentee 14,"PHD, Masters","Cybersecurity (M.S), Computer Networking (M.S.)",No
+1/21/2026 09:15:00,mentee15@sample.edu,Mentee 15,Undergraduate,"Cybersecurity (M.S), Computer Engineering (B.S. or M.S), Electrical Power Systems (M.S)",Yes
+1/21/2026 09:20:00,mentee16@sample.edu,Mentee 16,Masters,"Electrical Engineering (B.S. or M.S), Electrical Power Systems (M.S)",No
+1/21/2026 09:25:00,mentee17@sample.edu,Mentee 17,"Masters, PHD","Cybersecurity (M.S), Electrical Power Systems (M.S), Electrical Engineering (B.S. or M.S)",No
+1/21/2026 09:30:00,mentee18@sample.edu,Mentee 18,Masters,"Electrical Engineering (B.S. or M.S), Electrical Power Systems (M.S)",No
+1/21/2026 09:35:00,mentee19@sample.edu,Mentee 19,"PHD, Masters","Cybersecurity (M.S), Computer Networking (M.S.)",No
+1/21/2026 09:40:00,mentee20@sample.edu,Mentee 20,Masters,"Computer Engineering (B.S. or M.S), Electrical Engineering (B.S. or M.S)",Yes

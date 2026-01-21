@@ -35,8 +35,8 @@ def main():
 
     # CSV Default Locations (relative to this file)
     base_dir = Path(__file__).resolve().parent
-    mentee_csv_path = base_dir / "data/Interest Form - Mentee Form Responses.csv"
-    mentor_csv_path = base_dir / "data/Interest Form - Mentor Form Responses.csv"
+    mentee_csv_path = base_dir / "data/sample_mentees.csv"
+    mentor_csv_path = base_dir / "data/sample_mentors.csv"
 
     # Parse Mentee Data
     mentees = parse_mentee_csv(mentee_csv_path)
@@ -52,28 +52,38 @@ def main():
     assignments = greedy_assign(ranked_pairs)
 
     print("\n=== Summary ===")
-    print(f"Mentees parsed: {len(mentees)}")
-    print(f"Mentees after filter: {len(filtered_mentees)}")
-    print(f"Mentors parsed: {len(mentors)}")
-    print(f"Ranked pairs: {len(ranked_pairs)}")
-    print(f"Assignments: {len(assignments)}")
+    print(f"Mentees parsed: {len(mentees)}")                # Number of mentees parsed from the CSV file.
+    print(f"Mentees after filter: {len(filtered_mentees)}") # Number of mentees remaining after applying filters.
+    print(f"Mentors parsed: {len(mentors)}")                # Number of mentors parsed from the CSV file.
+    print(f"Ranked pairs: {len(ranked_pairs)}")             # Number of mentor-mentee pairs that have been evaluated and ranked based on their compatibility scores.
+    print(f"Assignments: {len(assignments)}")               # Number of final mentor-mentee matches made after applying the greedy assignment algorithm.
 
-    print("\n=== Top Ranked Pairs (Top 10) ===")
-    for idx, pair in enumerate(ranked_pairs[:10], start=1):
-        print(
-            f"{idx:02d}. {pair['mentee_name']} <{pair['mentee_email']}> "
-            f"↔ {pair['mentor_name']} <{pair['mentor_email']}> "
-            f"| score={pair['score']} "
-            f"(major={pair['major_overlap']}, edu={pair['education_overlap']})"
-        )
+    print("\nTop 3 Ranked Mentor–Mentee Matches\n" + "=" * 36)
 
-    print("\n=== Assignments ===")
-    for idx, pair in enumerate(assignments, start=1):
-        print(
-            f"{idx:02d}. {pair['mentee_name']} <{pair['mentee_email']}> "
-            f"→ {pair['mentor_name']} <{pair['mentor_email']}> "
-            f"| score={pair['score']}"
-        )
+    for rank, pair in enumerate(ranked_pairs[:3], start=1):
+        print(f"\nMatch #{rank}")
+        print("-" * 36)
+
+        print("Mentee")
+        print(f"  Name : {pair['mentee_name']}")
+        print(f"  Email: {pair['mentee_email']}")
+
+        print("\nMentor")
+        print(f"  Name : {pair['mentor_name']}")
+        print(f"  Email: {pair['mentor_email']}")
+
+        print("\nScoring Breakdown")
+        print(f"  Total Score: {pair['score']:.3f}")
+
+        weights = pair.get("weights", {})
+        if weights:
+            for criterion, value in weights.items():
+                print(f"  - {criterion.replace('_', ' ').title():<25}: {value:.3f}")
+        else:
+            print("  (No individual weight data available)")
+
+        print("-" * 36)
+
 
 if __name__ == "__main__":
     main()

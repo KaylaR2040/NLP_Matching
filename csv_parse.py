@@ -85,15 +85,17 @@ def parse_mentee_csv(file_path):
                 row.get("Have you ever participated in this or another mentoring program?")
             )
 
+            education_field = row.get("What level of Education you are currently pursuing?")
+            if not education_field:
+                education_field = row.get("What level of Education you are currently pursuing or considering?")
+
             mentee = Mentee(
                 # Identification
                 email=clean_string(row.get("Email Address")),
                 name=clean_string(row.get("First & Last Name")),
 
                 # Checkbox fields stored as list[str]
-                education_level=split_checkbox_field(
-                    row.get("What level of Education you are currently pursuing?")
-                ),
+                education_level=split_checkbox_field(education_field),
                 major=split_checkbox_field(
                     row.get("What is your major(s)")
                 ),
