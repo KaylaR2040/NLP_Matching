@@ -1,0 +1,12 @@
+VLSI and Integrated Circuits
+Power Electronics
+Signal Processing
+Embedded Systems
+RF and Microwave
+Computer Architecture
+Communications
+Control Systems
+Machine Learning / AI
+Photonics
+Biomedical Engineering
+Not Applicable
