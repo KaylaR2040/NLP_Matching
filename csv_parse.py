@@ -5,26 +5,48 @@
 # =============================================================================
 
 import csv
+from dataclasses import dataclass, field
+from typing import Dict, Iterable, List, Optional, Sequence
+
+import numpy as np
 
 
 # =============================================================================
 # Data Structures
 # =============================================================================
+@dataclass
 class Mentee:
-    def __init__(self, email, name, education_level, major, prior_mentorship):
-        self.email = email                          # Unique ID (email submits once)
-        self.name = name                            # Full name [str]
-        self.education_level = education_level      # Current education level(s) [list[str]]
-        self.major = major                          # Major(s) [list[str]]
-        self.prior_mentorship = prior_mentorship    # Prior mentorship [bool]
+    email: str
+    name: str
+    education_level: List[str]
+    major: List[str]
+    prior_mentorship: bool
+    industries: List[str] = field(default_factory=list)
+    interests: List[str] = field(default_factory=list)
+    orgs: List[str] = field(default_factory=list)
+    about: str = ""
+    weights: Dict[str, float] = field(
+        default_factory=lambda: {
+            "industry": 1.0,
+            "degree": 1.0,
+            "interest": 1.0,
+            "organization": 1.0,
+        }
+    )
+    embedding: Optional[np.ndarray] = field(default=None, repr=False)
 
 
+@dataclass
 class Mentor:
-    def __init__(self, email, name, education_level, degrees_completed):
-        self.email = email                          # Unique ID (email submits once)
-        self.name = name                            # Full name [str]
-        self.education_level = education_level      # Highest completed education level(s) [list[str]]
-        self.degrees_completed = degrees_completed  # Degree(s) completed [list[str]]
+    email: str
+    name: str
+    education_level: List[str]
+    degrees_completed: List[str]
+    industries: List[str] = field(default_factory=list)
+    interests: List[str] = field(default_factory=list)
+    orgs: List[str] = field(default_factory=list)
+    about: str = ""
+    embedding: Optional[np.ndarray] = field(default=None, repr=False)
 
 
 # =============================================================================
@@ -66,7 +88,26 @@ def parse_yes_no_to_bool(raw_value):
         return True
     else: # cleaned_value == "no"
         return False
-    
+
+
+def _first_present(row: dict, keys: Iterable[str]) -> str:
+    """Return the first non-empty field value from candidate keys."""
+    for key in keys:
+        val = row.get(key)
+        if val is not None and clean_string(val):
+            return val
+    return ""
+
+
+def _parse_weight(row: dict, keys: Iterable[str], default: float = 1.0) -> float:
+    raw = _first_present(row, keys)
+    try:
+        val = float(raw)
+        if val <= 0:
+            return default
+        return val
+    except (TypeError, ValueError):
+        return default
 
 # =============================================================================
 # CSV Parsing Entry Points
@@ -85,9 +126,14 @@ def parse_mentee_csv(file_path):
                 row.get("Have you ever participated in this or another mentoring program?")
             )
 
-            education_field = row.get("What level of Education you are currently pursuing?")
-            if not education_field:
-                education_field = row.get("What level of Education you are currently pursuing or considering?")
+            education_field = _first_present(
+                row,
+                [
+                    "What level of Education you are currently pursuing?",
+                    "What level of Education you are currently pursuing or considering?",
+                    "educationLevel",
+                ],
+            )
 
             mentee = Mentee(
                 # Identification
@@ -97,11 +143,55 @@ def parse_mentee_csv(file_path):
                 # Checkbox fields stored as list[str]
                 education_level=split_checkbox_field(education_field),
                 major=split_checkbox_field(
-                    row.get("What is your major(s)")
+                    _first_present(row, ["What is your major(s)", "degreePrograms"])
                 ),
-
                 # Prior Mentorship stored as bool
-                prior_mentorship=prior_mentorship
+                prior_mentorship=prior_mentorship,
+                # Optional extras
+                industries=split_checkbox_field(
+                    _first_present(
+                        row,
+                        [
+                            "What industries are you interested in?",
+                            "Industries of interest",
+                            "industriesOfInterest",
+                        ],
+                    )
+                ),
+                interests=split_checkbox_field(
+                    _first_present(
+                        row,
+                        [
+                            "What are your academic interests?",
+                            "academicInterests",
+                        ],
+                    )
+                ),
+                orgs=split_checkbox_field(
+                    _first_present(
+                        row,
+                        [
+                            "What student organizations are you involved in?",
+                            "studentOrgs",
+                        ],
+                    )
+                ),
+                about=clean_string(
+                    _first_present(
+                        row,
+                        [
+                            "Tell us about yourself",
+                            "About Yourself",
+                            "aboutYourself",
+                        ],
+                    )
+                ),
+                weights={
+                    "industry": _parse_weight(row, ["Matching by industry", "matchByIndustry"]),
+                    "degree": _parse_weight(row, ["Matching by degree", "matchByDegree"]),
+                    "interest": _parse_weight(row, ["Matching by interests", "matchByIdentity"]),
+                    "organization": _parse_weight(row, ["Matching by clubs", "matchByClubs"]),
+                },
             )
             mentees.append(mentee)
 
@@ -125,10 +215,62 @@ def parse_mentor_csv(file_path):
 
                 # Checkbox fields → list[str]
                 education_level=split_checkbox_field(
-                    row.get("What is your highest level of completed education?")
+                    _first_present(
+                        row,
+                        [
+                            "What is your highest level of completed education?",
+                            "educationLevel",
+                        ],
+                    )
                 ),
                 degrees_completed=split_checkbox_field(
-                    row.get("What degree(s) have you completed")
+                    _first_present(
+                        row,
+                        [
+                            "What degree(s) have you completed",
+                            "degreePrograms",
+                            "degrees_completed",
+                        ],
+                    )
+                ),
+                industries=split_checkbox_field(
+                    _first_present(
+                        row,
+                        [
+                            "What industry do you work in?",
+                            "industriesOfInterest",
+                            "industries",
+                        ],
+                    )
+                ),
+                interests=split_checkbox_field(
+                    _first_present(
+                        row,
+                        [
+                            "What are your areas of expertise?",
+                            "academicInterests",
+                            "interests",
+                        ],
+                    )
+                ),
+                orgs=split_checkbox_field(
+                    _first_present(
+                        row,
+                        [
+                            "What organizations are you affiliated with?",
+                            "orgs",
+                        ],
+                    )
+                ),
+                about=clean_string(
+                    _first_present(
+                        row,
+                        [
+                            "Tell us about yourself",
+                            "About Yourself",
+                            "aboutYourself",
+                        ],
+                    )
                 ),
             )
             mentors.append(mentor)
