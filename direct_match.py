@@ -1,83 +1,119 @@
-# =============================================================================
-# File: direct_matching.py
-# Purpose: Compute rule-based scores for candidate pairs and perform greedy
-#          assignment to produce baseline matches.
-# Inputs/Outputs:
-#   Inputs: Candidate pairs from filters.
-#   Outputs: Ranked matches and final greedy assignments.
-# Key Sections:
-#   - Imports and Types
-#   - Scoring Helpers
-#   - Ranking
-#   - Greedy Assignment
-# Notes on Future Work:
-#   - Replace greedy selection with ILP/LP optimization.
-#   - Add fairness and capacity constraints.
-# =============================================================================
+"""Similarity scoring + greedy assignment with NLP-aware weights."""
+
+from typing import Dict, Iterable, List, Sequence, Tuple
 
 import numpy as np
-import pandas as pd
+
+Pair = Dict[str, object]
 
 
 # =============================================================================
-# Scoring Helpers
+# Similarity helpers
 # =============================================================================
-def _normalize_list(values):
+def _normalize_list(values: Sequence[str]) -> set:
     if not values:
         return set()
     return {str(item).strip().lower() for item in values if str(item).strip()}
 
 
-def _overlap_count(list_a, list_b):
+def jaccard(list_a: Sequence[str], list_b: Sequence[str]) -> float:
     set_a = _normalize_list(list_a)
     set_b = _normalize_list(list_b)
-    return len(set_a.intersection(set_b))
+    if not set_a and not set_b:
+        return 0.0
+    return len(set_a & set_b) / len(set_a | set_b)
 
 
-def score_pair(mentee, mentor):
-    """
-    Score a mentor-mentee pair based on shared fields.
-    """
-    major_overlap = _overlap_count(mentee.major, mentor.degrees_completed)
-    education_overlap = _overlap_count(mentee.education_level, mentor.education_level)
+def cosine(vec_a: np.ndarray, vec_b: np.ndarray) -> float:
+    if vec_a is None or vec_b is None:
+        return 0.0
+    if vec_a.shape[0] == 0 or vec_b.shape[0] == 0:
+        return 0.0
+    denom = (np.linalg.norm(vec_a) * np.linalg.norm(vec_b))
+    if denom == 0:
+        return 0.0
+    return float(np.dot(vec_a, vec_b) / denom)
 
-    score = (2 * major_overlap) + (1 * education_overlap)
+
+# =============================================================================
+# Pair scoring
+# =============================================================================
+def score_pair(mentee, mentor) -> Pair:
+    """Calculate weighted score across categorical overlap + NLP similarity."""
+    weights = mentee.weights or {}
+
+    sims = {
+        "industry": jaccard(mentee.industries, mentor.industries),
+        "degree": jaccard(mentee.major, mentor.degrees_completed),
+        "interest": jaccard(getattr(mentee, "interests", []), getattr(mentor, "interests", [])),
+        "organization": jaccard(getattr(mentee, "orgs", []), getattr(mentor, "orgs", [])),
+        "nlp": cosine(getattr(mentee, "embedding", None), getattr(mentor, "embedding", None)),
+    }
+
+    # Weighted average per golden-path formula
+    weight_sum = sum(weights.values()) + 1.0  # +1 to keep NLP at base weight=1
+    weighted_sum = (
+        sims["industry"] * weights.get("industry", 1.0)
+        + sims["degree"] * weights.get("degree", 1.0)
+        + sims["interest"] * weights.get("interest", 1.0)
+        + sims["organization"] * weights.get("organization", 1.0)
+        + sims["nlp"] * 1.0
+    )
+    match_score = weighted_sum / weight_sum if weight_sum else 0.0
+
     return {
         "mentee_email": mentee.email,
         "mentee_name": mentee.name,
         "mentor_email": mentor.email,
         "mentor_name": mentor.name,
-        "major_overlap": major_overlap,
-        "education_overlap": education_overlap,
-        "score": score,
+        "scores": sims,
+        "weights": weights,
+        "match_score": match_score,
     }
 
 
 # =============================================================================
 # Ranking
 # =============================================================================
-def build_ranked_pairs(mentees, mentors):
-    """
-    Build and rank all mentor-mentee pairs.
-    """
-    pairs = []
+def build_ranked_pairs(
+    mentees: Sequence, mentors: Sequence, prohibited: Iterable[Tuple[str, str]] | None = None
+) -> List[Pair]:
+    prohibited = set(prohibited or [])
+    pairs: List[Pair] = []
+
     for mentee in mentees:
         for mentor in mentors:
+            if (mentee.email, mentor.email) in prohibited:
+                continue
             pairs.append(score_pair(mentee, mentor))
 
-    return sorted(pairs, key=lambda row: row["score"], reverse=True)
+    return sorted(pairs, key=lambda row: row["match_score"], reverse=True)
 
 
 # =============================================================================
 # Greedy Assignment
 # =============================================================================
-def greedy_assign(ranked_pairs):
-    """
-    Greedily assign mentors to mentees based on ranked pairs.
-    """
-    assigned_mentees = set()
-    assigned_mentors = set()
-    assignments = []
+def greedy_assign(ranked_pairs: Sequence[Pair], locked: Iterable[Tuple[str, str]] | None = None):
+    """Greedily assign mentors to mentees honoring any locked pairs first."""
+    locked = list(locked or [])
+    name_lookup_mentee = {pair["mentee_email"]: pair.get("mentee_name") for pair in ranked_pairs}
+    name_lookup_mentor = {pair["mentor_email"]: pair.get("mentor_name") for pair in ranked_pairs}
+    assigned_mentees = {m for m, _ in locked}
+    assigned_mentors = {n for _, n in locked}
+    assignments: List[Pair] = []
+
+    # Seed assignments with locked pairs (score left as None)
+    for mentee_email, mentor_email in locked:
+        assignments.append(
+            {
+                "mentee_email": mentee_email,
+                "mentor_email": mentor_email,
+                "mentee_name": name_lookup_mentee.get(mentee_email),
+                "mentor_name": name_lookup_mentor.get(mentor_email),
+                "match_score": None,
+                "locked": True,
+            }
+        )
 
     for pair in ranked_pairs:
         mentee_email = pair["mentee_email"]
