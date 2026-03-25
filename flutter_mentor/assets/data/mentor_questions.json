@@ -1,0 +1,29 @@
+{
+  "questions": [
+    {
+      "id": 1,
+      "text": "What is your area of expertise?",
+      "category": "Expertise"
+    },
+    {
+      "id": 2,
+      "text": "How many years of mentoring experience do you have?",
+      "category": "Experience"
+    },
+    {
+      "id": 3,
+      "text": "What is your preferred method of communication?",
+      "category": "Communication"
+    },
+    {
+      "id": 4,
+      "text": "What are your expectations from a mentee?",
+      "category": "Expectations"
+    },
+    {
+      "id": 5,
+      "text": "Can you provide a brief overview of your professional background?",
+      "category": "Background"
+    }
+  ]
+}

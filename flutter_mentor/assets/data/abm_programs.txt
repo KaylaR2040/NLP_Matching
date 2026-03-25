@@ -1,0 +1,26 @@
+Computer Engineering (BS)
+Computer Engineering (BS): Artificial Intelligence and Machine Learning Concentration
+Computer Engineering (BS): Computer Architecture and Emerging Systems Concentration
+Computer Engineering (BS): Computer Systems Software Concentration
+Computer Engineering (BS): Embedded Systems Concentration
+Computer Engineering (BS): Networking Hardware Concentration
+Computer Engineering (BS): Networking Software Concentration
+Electrical Engineering (BS)
+Electrical Engineering (BS): Analog Circuits Concentration
+Electrical Engineering (BS): Artificial Intelligence and Machine Learning Concentration
+Electrical Engineering (BS): Biomedical Instrumentation Concentration
+Electrical Engineering (BS): Communications and Signal Processing Concentration
+Electrical Engineering (BS): Controls and Robotics Concentration
+Electrical Engineering (BS): Digital Circuits Concentration
+Electrical Engineering (BS): Electronic Devices Concentrations
+Electrical Engineering (BS): Music Technology Concentration
+Electrical Engineering (BS): Optics and Photonics Concentration
+Electrical Engineering (BS): Power Systems Concentration
+Electrical Engineering (BS): Radio Frequency Circuits Concentration
+Electrical Engineering (BS): Renewable Electric Energy Systems Concentration
+Computer Engineering (MS)
+Computer Networking (MS)
+CyberSecurity (MS)
+Electrical Engineering (MS)
+Electrical Power Systems Engineering (MS)
+
