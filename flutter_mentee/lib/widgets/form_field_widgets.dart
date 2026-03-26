@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:fuzzywuzzy/fuzzywuzzy.dart';
 import '../constants/form_options.dart';
+import '../services/organization_search_service.dart';
 
 /// Reusable UI builders for the mentee interest form.
 class FormFieldWidgets {
@@ -9,17 +11,14 @@ class FormFieldWidgets {
       padding: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(
-            color: Theme.of(context).dividerColor,
-            width: 2,
-          ),
+          bottom: BorderSide(color: Theme.of(context).dividerColor, width: 2),
         ),
       ),
       child: Text(
         title,
-        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-          fontWeight: FontWeight.bold,
-        ),
+        style: Theme.of(
+          context,
+        ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
       ),
     );
   }
@@ -36,9 +35,9 @@ class FormFieldWidgets {
       children: [
         Text(
           '$label${required ? ' *' : ''}',
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
         TextField(
@@ -62,9 +61,9 @@ class FormFieldWidgets {
       children: [
         Text(
           'Email address *',
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 4),
         Text(
@@ -99,9 +98,9 @@ class FormFieldWidgets {
       children: [
         Text(
           'Pronouns *',
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
         Wrap(
@@ -131,9 +130,9 @@ class FormFieldWidgets {
       children: [
         Text(
           'Current education level *',
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 4),
         Text(
@@ -151,8 +150,9 @@ class FormFieldWidgets {
             String displayLabel = level;
             if (level == 'BS') displayLabel = 'BS (Bachelor of Science)';
             if (level == 'MS') displayLabel = 'MS (Master of Science)';
-            if (level == 'ABM') displayLabel = 'ABM (Accelerated Bachelor\'s/Master\'s)';
-            
+            if (level == 'ABM')
+              displayLabel = 'ABM (Accelerated Bachelor\'s/Master\'s)';
+
             return ChoiceChip(
               label: Text(displayLabel),
               selected: selectedLevel == level,
@@ -183,9 +183,9 @@ class FormFieldWidgets {
       children: [
         Text(
           'Expected graduation date *',
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 12),
         Row(
@@ -207,7 +207,10 @@ class FormFieldWidgets {
                     decoration: InputDecoration(
                       border: const OutlineInputBorder(),
                       hintText: 'Select',
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 16,
+                      ),
                       filled: true,
                       fillColor: Colors.grey[50],
                     ),
@@ -240,15 +243,15 @@ class FormFieldWidgets {
                     decoration: InputDecoration(
                       border: const OutlineInputBorder(),
                       hintText: 'Year',
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 16,
+                      ),
                       filled: true,
                       fillColor: Colors.grey[50],
                     ),
                     items: years.map((year) {
-                      return DropdownMenuItem(
-                        value: year,
-                        child: Text(year),
-                      );
+                      return DropdownMenuItem(value: year, child: Text(year));
                     }).toList(),
                     onChanged: onYearChanged,
                   ),
@@ -275,9 +278,9 @@ class FormFieldWidgets {
       children: [
         Text(
           'Degree program(s) *',
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 4),
         if (educationLevel == null)
@@ -298,10 +301,10 @@ class FormFieldWidgets {
               educationLevel == 'BS'
                   ? 'Undergraduate ECE programs'
                   : educationLevel == 'ABM'
-                      ? 'ABM programs'
-                      : educationLevel == 'MS'
-                          ? 'Graduate ECE programs'
-                          : 'PhD programs',
+                  ? 'ABM programs'
+                  : educationLevel == 'MS'
+                  ? 'Graduate ECE programs'
+                  : 'PhD programs',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).hintColor,
                 fontStyle: FontStyle.italic,
@@ -325,37 +328,127 @@ class FormFieldWidgets {
                   ),
                 )
               : ListView.builder(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    itemCount: programs.length,
-                    itemBuilder: (context, index) {
-                      final program = programs[index];
-                      final isSelected = selectedPrograms.contains(program);
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  itemCount: programs.length,
+                  itemBuilder: (context, index) {
+                    final program = programs[index];
+                    final isSelected = selectedPrograms.contains(program);
 
-                      return CheckboxListTile(
-                        dense: true,
-                        controlAffinity: ListTileControlAffinity.leading,
-                        title: Text(program),
-                        value: isSelected,
-                        onChanged: (selected) {
-                          final next = List<String>.from(selectedPrograms);
-                          if (selected == true) {
-                            if (!next.contains(program)) {
-                              next.add(program);
-                            }
-                          } else {
-                            next.remove(program);
+                    return CheckboxListTile(
+                      dense: true,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      title: Text(program),
+                      value: isSelected,
+                      onChanged: (selected) {
+                        final next = List<String>.from(selectedPrograms);
+                        if (selected == true) {
+                          if (!next.contains(program)) {
+                            next.add(program);
                           }
-                          onChanged(next);
-                        },
-                      );
-                    },
-                  ),
+                        } else {
+                          next.remove(program);
+                        }
+                        onChanged(next);
+                      },
+                    );
+                  },
+                ),
         ),
         const SizedBox(height: 6),
         Text(
           'Selected: ${selectedPrograms.length}',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Theme.of(context).hintColor,
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
+        ),
+      ],
+    );
+  }
+
+  /// Optional concentration selector (toggle + dialog with fuzzy search).
+  static Widget buildConcentrationField(
+    BuildContext context,
+    bool hasConcentration,
+    List<String> selectedConcentrations,
+    List<String> options,
+    Function(bool) onToggle,
+    Function(List<String>) onSelected,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CheckboxListTile(
+          value: hasConcentration,
+          controlAffinity: ListTileControlAffinity.leading,
+          title: const Text('Do you have a concentration?'),
+          onChanged: (value) => onToggle(value ?? false),
+        ),
+        if (hasConcentration) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Selected: ${selectedConcentrations.length} concentration(s)',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).hintColor,
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () => _showConcentrationDialog(
+                  context,
+                  options,
+                  selectedConcentrations,
+                  onSelected,
+                ),
+                icon: const Icon(Icons.search),
+                label: const Text('Search & select'),
+              ),
+            ],
+          ),
+          if (selectedConcentrations.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: selectedConcentrations.map((c) {
+                return Chip(
+                  label: Text(c),
+                  onDeleted: () {
+                    final next = List<String>.from(selectedConcentrations)
+                      ..remove(c);
+                    onSelected(next);
+                  },
+                );
+              }).toList(),
+            ),
+          ],
+        ],
+      ],
+    );
+  }
+
+  /// Free-form specialization text for PhD selections.
+  static Widget buildPhdSpecializationField(
+    BuildContext context,
+    TextEditingController controller,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'PhD specialization *',
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            hintText: 'e.g., Power systems, ML hardware, communications',
+            border: OutlineInputBorder(),
           ),
         ),
       ],
@@ -376,16 +469,16 @@ class FormFieldWidgets {
       children: [
         Text(
           label,
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 4),
         Text(
           helperText,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Theme.of(context).hintColor,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
         ),
         const SizedBox(height: 8),
         Wrap(
@@ -426,9 +519,9 @@ class FormFieldWidgets {
       children: [
         Text(
           label,
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
         ),
         if (helperText != null) ...[
           const SizedBox(height: 4),
@@ -470,9 +563,9 @@ class FormFieldWidgets {
       children: [
         Text(
           label,
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
         Row(
@@ -481,7 +574,10 @@ class FormFieldWidgets {
               child: InkWell(
                 onTap: () => onChanged(true),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: 16,
+                  ),
                   decoration: BoxDecoration(
                     border: Border.all(
                       color: selectedValue == true
@@ -491,7 +587,9 @@ class FormFieldWidgets {
                     ),
                     borderRadius: BorderRadius.circular(8),
                     color: selectedValue == true
-                        ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3)
+                        ? Theme.of(
+                            context,
+                          ).colorScheme.primaryContainer.withValues(alpha: 0.3)
                         : Colors.transparent,
                   ),
                   child: Row(
@@ -517,7 +615,10 @@ class FormFieldWidgets {
               child: InkWell(
                 onTap: () => onChanged(false),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: 16,
+                  ),
                   decoration: BoxDecoration(
                     border: Border.all(
                       color: selectedValue == false
@@ -527,7 +628,9 @@ class FormFieldWidgets {
                     ),
                     borderRadius: BorderRadius.circular(8),
                     color: selectedValue == false
-                        ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3)
+                        ? Theme.of(
+                            context,
+                          ).colorScheme.primaryContainer.withValues(alpha: 0.3)
                         : Colors.transparent,
                   ),
                   child: Row(
@@ -565,16 +668,16 @@ class FormFieldWidgets {
       children: [
         Text(
           'Student organizations and clubs',
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 4),
         Text(
           'Select all that you are involved with',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Theme.of(context).hintColor,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
         ),
         const SizedBox(height: 8),
         Container(
@@ -588,13 +691,14 @@ class FormFieldWidgets {
             children: [
               Text(
                 'Selected: ${selectedOrgs.length} organization(s)',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w500,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
               ),
               const SizedBox(height: 8),
               TextButton.icon(
-                onPressed: () => _showOrgsDialog(context, selectedOrgs, onChanged),
+                onPressed: () =>
+                    _showOrgsDialog(context, selectedOrgs, onChanged),
                 icon: const Icon(Icons.search),
                 label: const Text('Search and select organizations'),
               ),
@@ -622,24 +726,25 @@ class FormFieldWidgets {
     );
   }
 
-  /// Show organizations dialog  
+  /// Show organizations dialog
   static void _showOrgsDialog(
     BuildContext context,
     List<String> currentSelection,
     Function(List<String>) onChanged,
   ) {
+    final searchService = OrganizationSearchService.shared;
     showDialog(
       context: context,
       builder: (context) {
         List<String> tempSelected = List.from(currentSelection);
         String searchQuery = '';
-        
+        List<String> results = FormOptions.ncsuOrgs;
+        bool loading = false;
+
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            final filteredOrgs = FormOptions.ncsuOrgs
-                .where((org) => org.toLowerCase().contains(searchQuery.toLowerCase()))
-                .toList();
-            
+            final filteredOrgs = results;
+
             return AlertDialog(
               title: const Text('Select Organizations'),
               content: SizedBox(
@@ -654,10 +759,22 @@ class FormFieldWidgets {
                         border: OutlineInputBorder(),
                       ),
                       onChanged: (value) {
-                        setDialogState(() => searchQuery = value);
+                        searchQuery = value;
+                        setDialogState(() => loading = true);
+                        searchService
+                            .search(searchQuery, FormOptions.ncsuOrgs)
+                            .then((merged) {
+                              if (!context.mounted) return;
+                              setDialogState(() {
+                                results = merged;
+                                loading = false;
+                              });
+                            });
                       },
                     ),
                     const SizedBox(height: 16),
+                    if (loading) const LinearProgressIndicator(),
+                    if (loading) const SizedBox(height: 8),
                     Expanded(
                       child: ListView.builder(
                         shrinkWrap: true,
@@ -665,7 +782,7 @@ class FormFieldWidgets {
                         itemBuilder: (context, index) {
                           final org = filteredOrgs[index];
                           final isSelected = tempSelected.contains(org);
-                          
+
                           return CheckboxListTile(
                             title: Text(org),
                             value: isSelected,
@@ -705,6 +822,118 @@ class FormFieldWidgets {
     );
   }
 
+  /// Show concentrations dialog with fuzzy search.
+  static void _showConcentrationDialog(
+    BuildContext context,
+    List<String> allOptions,
+    List<String> currentSelection,
+    Function(List<String>) onSelected,
+  ) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        List<String> tempSelected = List.from(currentSelection);
+        String searchQuery = '';
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final filtered = _filterOptionsFuzzy(
+              searchQuery,
+              allOptions,
+              limit: 40,
+            );
+
+            return AlertDialog(
+              title: const Text('Select concentrations'),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      decoration: const InputDecoration(
+                        hintText: 'Search concentrations...',
+                        prefixIcon: Icon(Icons.search),
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (value) =>
+                          setDialogState(() => searchQuery = value),
+                    ),
+                    const SizedBox(height: 16),
+                    Expanded(
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: filtered.length,
+                        itemBuilder: (context, index) {
+                          final opt = filtered[index];
+                          final isSelected = tempSelected.contains(opt);
+                          return CheckboxListTile(
+                            title: Text(opt),
+                            value: isSelected,
+                            onChanged: (selected) {
+                              setDialogState(() {
+                                if (selected == true) {
+                                  tempSelected.add(opt);
+                                } else {
+                                  tempSelected.remove(opt);
+                                }
+                              });
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    onSelected(tempSelected);
+                    Navigator.pop(context);
+                  },
+                  child: const Text('Done'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// Fuzzy + substring filter helper (keeps reasonable limit).
+  static List<String> _filterOptionsFuzzy(
+    String query,
+    List<String> options, {
+    int limit = 50,
+  }) {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) {
+      return options.take(limit).toList();
+    }
+
+    final results = extractAllSorted(
+      query: trimmed,
+      choices: options,
+      cutoff: 30,
+    );
+
+    // Fallback to simple contains if fuzzy yields nothing
+    if (results.isEmpty) {
+      return options
+          .where((o) => o.toLowerCase().contains(trimmed.toLowerCase()))
+          .take(limit)
+          .toList();
+    }
+
+    return results.map((r) => r.choice as String).take(limit).toList();
+  }
+
   /// Build multi-line text field
   static Widget buildMultiLineTextField(
     BuildContext context,
@@ -716,16 +945,17 @@ class FormFieldWidgets {
       children: [
         Text(
           label,
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
         TextField(
           controller: controller,
           maxLines: 5,
           decoration: const InputDecoration(
-            hintText: 'Share your story, interests, goals, or anything else you\'d like your mentor to know...',
+            hintText:
+                'Share your story, interests, goals, or anything else you\'d like your mentor to know...',
             border: OutlineInputBorder(),
           ),
         ),
@@ -738,7 +968,9 @@ class FormFieldWidgets {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
+        color: Theme.of(
+          context,
+        ).colorScheme.primaryContainer.withValues(alpha: 0.3),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
@@ -749,16 +981,16 @@ class FormFieldWidgets {
         children: [
           Text(
             'Rate the importance of the following when matching you with a mentor:',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
           Text(
             '1 = Not important | 2 = Slightly important | 3 = Important | 4 = Very important',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).hintColor,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
           ),
         ],
       ),
@@ -777,9 +1009,9 @@ class FormFieldWidgets {
       children: [
         Text(
           label,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.w500,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
         ),
         const SizedBox(height: 8),
         Row(

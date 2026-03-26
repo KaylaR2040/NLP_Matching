@@ -27,21 +27,7 @@ class FormOptions {
   static List<String> get gradPrograms => _loader.gradPrograms;
   static List<String> get abmPrograms => _loader.abmPrograms;
   static List<String> get phdPrograms => _loader.phdPrograms;
-
-
-  // Academic interests
-  static const List<String> academicInterests = [
-    'Embedded systems',
-    'Software engineering',
-    'Hardware / electronics',
-    'Robotics / autonomy',
-    'Artificial intelligence / machine learning',
-    'Data science / analytics',
-    'Cybersecurity',
-    'Power / energy systems',
-    'Communications / signal processing',
-    'Other',
-  ];
+  static List<String> get concentrations => _loader.concentrations;
 
   // Experience levels
   static const List<String> experienceLevels = [

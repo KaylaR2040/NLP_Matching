@@ -116,7 +116,6 @@ class MentorMatcher:
             
             # Also compute help topic overlap (always important)
             help_score = self._jaccard(mentee.helpTopics, mentor.helpTopics)
-            academic_score = self._jaccard(mentee.academicInterests, mentor.academicInterests)
             
             # Weighted priority score
             priority_score = (
@@ -129,14 +128,12 @@ class MentorMatcher:
             
             # Final combined score:
             # 40% NLP semantic similarity
-            # 30% priority-weighted field matching
-            # 20% help topic overlap
-            # 10% academic interest overlap
+            # 35% priority-weighted field matching
+            # 25% help topic overlap
             total_score = (
                 0.40 * base_nlp +
-                0.30 * priority_score +
-                0.20 * help_score +
-                0.10 * academic_score
+                0.35 * priority_score +
+                0.25 * help_score
             )
             
             scores.append({
@@ -153,7 +150,6 @@ class MentorMatcher:
                     'identity_match': round(identity_score, 4),
                     'grad_year_closeness': round(grad_score, 4),
                     'help_topic_overlap': round(help_score, 4),
-                    'academic_interest_overlap': round(academic_score, 4),
                 },
                 'matching_help_topics': list(set(mentee.helpTopics).intersection(set(mentor.helpTopics))),
                 'common_organizations': list(set(mentee.studentOrgs).intersection(set(mentor.studentOrgs))),

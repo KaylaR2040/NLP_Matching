@@ -37,6 +37,7 @@ dependencies:
   shadcn_flutter: ^0.0.51
   intl: ^0.20.2
   http: ^1.1.0
+  fuzzywuzzy: ^1.2.0
 
 dev_dependencies:
   flutter_test:

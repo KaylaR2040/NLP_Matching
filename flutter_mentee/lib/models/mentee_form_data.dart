@@ -13,7 +13,9 @@ class MenteeFormData {
   String? graduationSemester;
   String? graduationYear;
   final List<String> degreePrograms;
-  final List<String> academicInterests;
+  bool hasConcentration;
+  final List<String> concentrations;
+  final TextEditingController phdSpecializationController;
   
   // Experience + Involvement
   bool? previousMentorship;
@@ -43,7 +45,9 @@ class MenteeFormData {
     this.graduationSemester,
     this.graduationYear,
     List<String>? degreePrograms,
-    List<String>? academicInterests,
+    this.hasConcentration = false,
+    List<String>? concentrations,
+    TextEditingController? phdSpecializationController,
     this.previousMentorship,
     List<String>? studentOrgs,
     this.experienceLevel,
@@ -59,7 +63,8 @@ class MenteeFormData {
         firstNameController = firstNameController ?? TextEditingController(),
         lastNameController = lastNameController ?? TextEditingController(),
         degreePrograms = degreePrograms ?? [],
-        academicInterests = academicInterests ?? [],
+        concentrations = concentrations ?? [],
+        phdSpecializationController = phdSpecializationController ?? TextEditingController(),
         studentOrgs = studentOrgs ?? [],
         industriesOfInterest = industriesOfInterest ?? [],
         aboutYourselfController = aboutYourselfController ?? TextEditingController(),
@@ -89,8 +94,11 @@ class MenteeFormData {
     if (degreePrograms.isEmpty) {
       errors.add('At least one degree program is required');
     }
-    if (academicInterests.isEmpty) {
-      errors.add('At least one academic interest is required');
+    if ((educationLevel == 'BS' || educationLevel == 'ABM') && hasConcentration && concentrations.isEmpty) {
+      errors.add('Please select at least one concentration or turn off the concentration toggle');
+    }
+    if (educationLevel == 'PhD' && phdSpecializationController.text.trim().isEmpty) {
+      errors.add('Please enter your PhD specialization');
     }
     if (previousMentorship == null) {
       errors.add('Previous mentorship question is required');
@@ -118,7 +126,9 @@ class MenteeFormData {
       'graduationSemester': graduationSemester,
       'graduationYear': graduationYear,
       'degreePrograms': degreePrograms,
-      'academicInterests': academicInterests,
+      'hasConcentration': hasConcentration,
+      'concentrations': concentrations,
+      'phdSpecialization': phdSpecializationController.text.trim(),
       'previousMentorship': previousMentorship,
       'studentOrgs': studentOrgs,
       'experienceLevel': experienceLevel,
@@ -139,5 +149,6 @@ class MenteeFormData {
     firstNameController.dispose();
     lastNameController.dispose();
     aboutYourselfController.dispose();
+    phdSpecializationController.dispose();
   }
 }

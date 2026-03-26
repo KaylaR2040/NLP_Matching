@@ -12,6 +12,7 @@ class FormDataLoader {
   List<String>? _gradPrograms;
   List<String>? _abmPrograms;
   List<String>? _phdPrograms;
+  List<String>? _concentrations;
 
   /// Loads all files required by the form before rendering options.
   Future<void> loadAll() async {
@@ -21,6 +22,7 @@ class FormDataLoader {
       loadGradPrograms(),
       loadAbmPrograms(),
       loadPhdPrograms(),
+      loadConcentrations(),
     ]);
   }
 
@@ -83,6 +85,25 @@ class FormDataLoader {
       return _gradPrograms!;
     }
   }
+
+  /// Load concentrations from text file
+  Future<List<String>> loadConcentrations() async {
+    if (_concentrations != null) return _concentrations!;
+    try {
+      final data = await rootBundle.loadString('assets/data/concentrations.txt');
+      _concentrations = data
+          .split('\n')
+          .map((line) => line.trim())
+          .where((line) => line.isNotEmpty)
+          .toList();
+      print('Loaded ${_concentrations!.length} concentrations');
+      return _concentrations!;
+    } catch (e) {
+      print('Error loading concentrations: $e');
+      _concentrations = [];
+      return _concentrations!;
+    }
+  }
   /// Load ABM programs from text file
   Future<List<String>> loadAbmPrograms() async {
     if (_abmPrograms != null) return _abmPrograms!;
@@ -129,6 +150,7 @@ class FormDataLoader {
   List<String> get gradPrograms => _gradPrograms ?? [];
   List<String> get abmPrograms => _abmPrograms ?? [];
   List<String> get phdPrograms => _phdPrograms ?? [];
+  List<String> get concentrations => _concentrations ?? [];
 
     /// True once all required files are loaded or defaulted.
   bool get isLoaded =>
@@ -136,5 +158,6 @@ class FormDataLoader {
       _undergradPrograms != null &&
       _gradPrograms != null &&
       _abmPrograms != null &&
-      _phdPrograms != null;
+      _phdPrograms != null &&
+      _concentrations != null;
 }

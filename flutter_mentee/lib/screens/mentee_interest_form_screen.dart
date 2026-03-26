@@ -106,6 +106,9 @@ class _MenteeInterestFormScreenState extends State<MenteeInterestFormScreen> {
                       (value) => setState(() {
                         _formData.educationLevel = value;
                         _formData.degreePrograms.clear();
+                        _formData.hasConcentration = false;
+                        _formData.concentrations.clear();
+                        _formData.phdSpecializationController.clear();
                       }),
                     ),
                     const SizedBox(height: 16),
@@ -127,25 +130,39 @@ class _MenteeInterestFormScreenState extends State<MenteeInterestFormScreen> {
                           ..addAll(value);
                       }),
                     ),
+                    if (_formData.educationLevel == 'BS' || _formData.educationLevel == 'ABM') ...[
+                      const SizedBox(height: 16),
+                      FormFieldWidgets.buildConcentrationField(
+                        context,
+                        _formData.hasConcentration,
+                        _formData.concentrations,
+                        FormOptions.concentrations,
+                        (toggle) => setState(() {
+                          _formData.hasConcentration = toggle;
+                          if (!toggle) {
+                            _formData.concentrations.clear();
+                          }
+                        }),
+                        (selection) => setState(() {
+                          _formData.concentrations
+                            ..clear()
+                            ..addAll(selection);
+                        }),
+                      ),
+                    ],
+                    if (_formData.educationLevel == 'PhD') ...[
+                      const SizedBox(height: 16),
+                      FormFieldWidgets.buildPhdSpecializationField(
+                        context,
+                        _formData.phdSpecializationController,
+                      ),
+                    ],
                     const SizedBox(height: 16),
-                    FormFieldWidgets.buildMultiSelectChips(
-                      context,
-                      'Academic interests or focus areas *',
-                      'Select all that apply',
-                      FormOptions.academicInterests,
-                      _formData.academicInterests,
-                      (value) => setState(() {
-                        _formData.academicInterests.clear();
-                        _formData.academicInterests.addAll(value);
-                      }),
-                    ),
-                    const SizedBox(height: 32),
-                    
                     // Experience + involvement
                     FormFieldWidgets.buildSection(context, 'Experience + Involvement'),
                     FormFieldWidgets.buildYesNoField(
                       context,
-                      'Have you participated in a mentorship program before? *',
+                      'Have you participated in this mentoring program before? *',
                       _formData.previousMentorship,
                       (value) => setState(() => _formData.previousMentorship = value),
                     ),

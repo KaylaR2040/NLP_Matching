@@ -123,7 +123,7 @@ def parse_mentee_csv(file_path):
 
         for row in reader:
             prior_mentorship = parse_yes_no_to_bool(
-                row.get("Have you ever participated in this or another mentoring program?")
+                row.get("Have you participated in this mentoring program before?")
             )
 
             education_field = _first_present(
@@ -155,15 +155,6 @@ def parse_mentee_csv(file_path):
                             "What industries are you interested in?",
                             "Industries of interest",
                             "industriesOfInterest",
-                        ],
-                    )
-                ),
-                interests=split_checkbox_field(
-                    _first_present(
-                        row,
-                        [
-                            "What are your academic interests?",
-                            "academicInterests",
                         ],
                     )
                 ),
@@ -240,16 +231,6 @@ def parse_mentor_csv(file_path):
                             "What industry do you work in?",
                             "industriesOfInterest",
                             "industries",
-                        ],
-                    )
-                ),
-                interests=split_checkbox_field(
-                    _first_present(
-                        row,
-                        [
-                            "What are your areas of expertise?",
-                            "academicInterests",
-                            "interests",
                         ],
                     )
                 ),

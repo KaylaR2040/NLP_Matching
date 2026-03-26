@@ -19,7 +19,6 @@ class Mentee(BaseModel):
     graduationSemester: str  # Spring, Summer, Fall
     graduationYear: str  # e.g., "2025"
     degreePrograms: List[str]  # Multi-select list
-    academicInterests: List[str]  # Multi-select chips
     
     # Experience + Involvement
     previousMentorship: bool
@@ -68,7 +67,6 @@ class Mentee(BaseModel):
             f"Education Level: {self.educationLevel}",
             f"Degree Programs: {', '.join(self.degreePrograms)}",
             f"Graduating: {self.graduationSemester} {self.graduationYear}",
-            f"Academic Interests: {', '.join(self.academicInterests)}",
             f"Previous Mentorship: {'Yes' if self.previousMentorship else 'No'}",
             f"Student Organizations: {', '.join(self.studentOrgs) if self.studentOrgs else 'None'}",
             f"Experience Level: {self.experienceLevel}",
