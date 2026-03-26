@@ -1,10 +1,10 @@
 from fastapi import APIRouter, HTTPException
 from typing import List, Dict
 import json
-from pathlib import Path
 
 from ..models.mentee import Mentee
 from ..models.mentor import Mentor
+from ..config import MENTEES_FILE, MENTORS_FILE
 router = APIRouter()
 
 # Lazy-initialize matcher so server starts even without ML libs installed
@@ -16,10 +16,6 @@ def get_matcher():
         from ..matcher import MentorMatcher
         _matcher = MentorMatcher()
     return _matcher
-
-# Storage paths - reads from the SAME storage that Flutter writes to
-MENTEES_FILE = Path(__file__).parent.parent / "storage" / "mentees.json"
-MENTORS_FILE = Path(__file__).parent.parent / "storage" / "mentors.json"
 
 def load_data():
     """Load mentees and mentors from JSON storage (written by Flutter form submissions)"""

@@ -1,23 +1,20 @@
 from fastapi import APIRouter, HTTPException, Body
 from typing import List, Dict
 import json
-from pathlib import Path
 
 from ..models.mentee import Mentee
+from ..config import MENTEES_FILE
 from ..services.google_forms import GoogleFormSubmissionError, submit_google_form
 
 router = APIRouter()
 
-# Storage path
-STORAGE_FILE = Path(__file__).parent.parent / "storage" / "mentees.json"
-
 def load_mentees() -> List[Dict]:
     """Load mentees from storage"""
-    if not STORAGE_FILE.exists():
+    if not MENTEES_FILE.exists():
         return []
     
     try:
-        with open(STORAGE_FILE, 'r') as f:
+        with open(MENTEES_FILE, 'r') as f:
             data = json.load(f)
             return data
     except Exception as e:
@@ -27,8 +24,8 @@ def load_mentees() -> List[Dict]:
 def save_mentees(mentees: List[Dict]):
     """Save mentees to storage"""
     try:
-        STORAGE_FILE.parent.mkdir(exist_ok=True)
-        with open(STORAGE_FILE, 'w') as f:
+        MENTEES_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(MENTEES_FILE, 'w') as f:
             json.dump(mentees, f, indent=2)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error saving data: {str(e)}")

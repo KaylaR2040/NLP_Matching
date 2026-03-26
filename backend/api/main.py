@@ -2,28 +2,19 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import json
-import os
-from pathlib import Path
 
 from .routes import mentee_routes, mentor_routes, matching_routes
-from .models.mentee import Mentee
-from .models.mentor import Mentor
+from .config import MENTEES_FILE, MENTORS_FILE
 
-# Create storage directory if it doesn't exist
-STORAGE_DIR = Path(__file__).parent / "storage"
-STORAGE_DIR.mkdir(exist_ok=True)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize app resources on startup"""
     # Create storage files if they don't exist
-    mentees_file = STORAGE_DIR / "mentees.json"
-    mentors_file = STORAGE_DIR / "mentors.json"
-    
-    if not mentees_file.exists():
-        mentees_file.write_text("[]")
-    if not mentors_file.exists():
-        mentors_file.write_text("[]")
+    if not MENTEES_FILE.exists():
+        MENTEES_FILE.write_text("[]")
+    if not MENTORS_FILE.exists():
+        MENTORS_FILE.write_text("[]")
     
     yield
     # Cleanup on shutdown if needed
@@ -65,13 +56,10 @@ async def root():
 @app.get("/api/stats")
 async def get_stats():
     """Get statistics about stored data"""
-    mentees_file = STORAGE_DIR / "mentees.json"
-    mentors_file = STORAGE_DIR / "mentors.json"
-    
     try:
-        with open(mentees_file, 'r') as f:
+        with open(MENTEES_FILE, 'r') as f:
             mentees = json.load(f)
-        with open(mentors_file, 'r') as f:
+        with open(MENTORS_FILE, 'r') as f:
             mentors = json.load(f)
             
         return {

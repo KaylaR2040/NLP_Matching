@@ -1,23 +1,20 @@
 from fastapi import APIRouter, HTTPException, Body
 from typing import List, Dict
 import json
-from pathlib import Path
 
 from ..models.mentor import Mentor
+from ..config import MENTORS_FILE
 from ..services.google_forms import GoogleFormSubmissionError, submit_google_form
 
 router = APIRouter()
 
-# Storage path
-STORAGE_FILE = Path(__file__).parent.parent / "storage" / "mentors.json"
-
 def load_mentors() -> List[Dict]:
     """Load mentors from storage"""
-    if not STORAGE_FILE.exists():
+    if not MENTORS_FILE.exists():
         return []
     
     try:
-        with open(STORAGE_FILE, 'r') as f:
+        with open(MENTORS_FILE, 'r') as f:
             data = json.load(f)
             return data
     except Exception as e:
@@ -27,8 +24,8 @@ def load_mentors() -> List[Dict]:
 def save_mentors(mentors: List[Dict]):
     """Save mentors to storage"""
     try:
-        STORAGE_FILE.parent.mkdir(exist_ok=True)
-        with open(STORAGE_FILE, 'w') as f:
+        MENTORS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(MENTORS_FILE, 'w') as f:
             json.dump(mentors, f, indent=2)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error saving data: {str(e)}")
