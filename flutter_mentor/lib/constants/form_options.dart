@@ -49,16 +49,6 @@ class FormOptions {
   static const List<String> studentsCountOptions = [
     '1 student',
     '2 students',
-    '3 students',
-    '4 students',
-    '5+ students',
-  ];
-
-  static const List<String> termOptions = [
-    'F25',
-    'Sp25',
-    'F26',
-    'Sp26',
   ];
 
   static const List<String> semester = [

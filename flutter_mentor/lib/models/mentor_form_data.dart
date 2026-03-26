@@ -1,16 +1,31 @@
 import 'package:flutter/material.dart';
 
+/// Structured representation of a single degree entry.
+class DegreeEntry {
+  final String level;
+  final String program;
+  final String graduationYear;
+
+  DegreeEntry({
+    required this.level,
+    required this.program,
+    required this.graduationYear,
+  });
+
+  Map<String, String> toJson() => {
+        'level': level,
+        'program': program,
+        'graduationYear': graduationYear,
+      };
+}
+
 class MentorFormData {
   final TextEditingController emailController;
   final TextEditingController firstNameController;
   final TextEditingController lastNameController;
-  final TextEditingController joinDateController;
+  final TextEditingController linkedinController;
 
-  String? graduationYear;
-  final List<String> degreeLevels;
-  final List<String> degreePrograms;
-  final TextEditingController otherDegreeController;
-  final TextEditingController otherEducationController;
+  final List<DegreeEntry> degrees;
 
   final TextEditingController currentCityStateController;
   final TextEditingController currentJobTitleController;
@@ -21,7 +36,6 @@ class MentorFormData {
   final List<String> industryFocusAreas;
 
   final List<String> previousInvolvementOrgs;
-  final List<String> availableTerms;
 
   final TextEditingController whyInterestedController;
   final TextEditingController professionalExperienceController;
@@ -32,12 +46,8 @@ class MentorFormData {
     TextEditingController? emailController,
     TextEditingController? firstNameController,
     TextEditingController? lastNameController,
-    TextEditingController? joinDateController,
-    this.graduationYear,
-    List<String>? degreeLevels,
-    List<String>? degreePrograms,
-    TextEditingController? otherDegreeController,
-    TextEditingController? otherEducationController,
+    TextEditingController? linkedinController,
+    List<DegreeEntry>? degrees,
     TextEditingController? currentCityStateController,
     TextEditingController? currentJobTitleController,
     TextEditingController? currentCompanyController,
@@ -45,7 +55,6 @@ class MentorFormData {
     TextEditingController? previousInvolvementController,
     List<String>? industryFocusAreas,
     List<String>? previousInvolvementOrgs,
-    List<String>? availableTerms,
     TextEditingController? whyInterestedController,
     TextEditingController? professionalExperienceController,
     TextEditingController? aboutYourselfController,
@@ -53,13 +62,8 @@ class MentorFormData {
   })  : emailController = emailController ?? TextEditingController(),
         firstNameController = firstNameController ?? TextEditingController(),
         lastNameController = lastNameController ?? TextEditingController(),
-        joinDateController =
-            joinDateController ?? TextEditingController(text: _todayDate()),
-        degreeLevels = degreeLevels ?? [],
-        degreePrograms = degreePrograms ?? [],
-        otherDegreeController = otherDegreeController ?? TextEditingController(),
-        otherEducationController =
-            otherEducationController ?? TextEditingController(),
+        linkedinController = linkedinController ?? TextEditingController(),
+        degrees = degrees ?? [],
         currentCityStateController =
             currentCityStateController ?? TextEditingController(),
         currentJobTitleController =
@@ -70,20 +74,12 @@ class MentorFormData {
             previousInvolvementController ?? TextEditingController(),
         industryFocusAreas = industryFocusAreas ?? [],
         previousInvolvementOrgs = previousInvolvementOrgs ?? [],
-        availableTerms = availableTerms ?? [],
         whyInterestedController =
             whyInterestedController ?? TextEditingController(),
         professionalExperienceController =
             professionalExperienceController ?? TextEditingController(),
         aboutYourselfController =
             aboutYourselfController ?? TextEditingController();
-
-  static String _todayDate() {
-    final now = DateTime.now();
-    final month = now.month.toString().padLeft(2, '0');
-    final day = now.day.toString().padLeft(2, '0');
-    return '${now.year}-$month-$day';
-  }
 
   List<String> validate() {
     final errors = <String>[];
@@ -98,14 +94,16 @@ class MentorFormData {
     if (lastNameController.text.trim().isEmpty) {
       errors.add('Last name is required');
     }
-    if (graduationYear == null) {
-      errors.add('Graduation year is required');
+    if (degrees.isEmpty) {
+      errors.add('Add at least one degree entry');
     }
-    if (degreeLevels.isEmpty) {
-      errors.add('Select at least one degree level');
-    }
-    if (degreePrograms.isEmpty && otherDegreeController.text.trim().isEmpty) {
-      errors.add('Select at least one major/degree program or enter Other');
+    for (final degree in degrees) {
+      if (degree.level.isEmpty ||
+          degree.program.isEmpty ||
+          degree.graduationYear.isEmpty) {
+        errors.add('Each degree must include level, program, and grad year');
+        break;
+      }
     }
     if (currentCityStateController.text.trim().isEmpty) {
       errors.add('Current city/state is required');
@@ -139,23 +137,12 @@ class MentorFormData {
   }
 
   Map<String, dynamic> toJson() {
-    final termMap = {
-      'f25': availableTerms.contains('F25'),
-      'sp25': availableTerms.contains('Sp25'),
-      'f26': availableTerms.contains('F26'),
-      'sp26': availableTerms.contains('Sp26'),
-    };
-
     return {
       'email': emailController.text.trim(),
-      'joinDate': joinDateController.text.trim(),
+      'linkedin': linkedinController.text.trim(),
       'firstName': firstNameController.text.trim(),
       'lastName': lastNameController.text.trim(),
-      'graduationYear': graduationYear,
-      'degreeLevels': degreeLevels,
-      'degreePrograms': degreePrograms,
-      'otherDegree': otherDegreeController.text.trim(),
-      'otherEducation': otherEducationController.text.trim(),
+      'degrees': degrees.map((d) => d.toJson()).toList(),
       'currentCityState': currentCityStateController.text.trim(),
       'currentJobTitle': currentJobTitleController.text.trim(),
       'currentCompany': currentCompanyController.text.trim(),
@@ -163,12 +150,10 @@ class MentorFormData {
       'industryFocusArea': industryFocusAreas,
       'previousInvolvement': previousInvolvementController.text.trim(),
       'previousInvolvementOrgs': previousInvolvementOrgs,
-      'availabilityTerms': availableTerms,
       'whyInterested': whyInterestedController.text.trim(),
       'professionalExperience': professionalExperienceController.text.trim(),
       'aboutYourself': aboutYourselfController.text.trim(),
       'studentsInterested': studentsInterested,
-      ...termMap,
     };
   }
 
@@ -176,9 +161,7 @@ class MentorFormData {
     emailController.dispose();
     firstNameController.dispose();
     lastNameController.dispose();
-    joinDateController.dispose();
-    otherDegreeController.dispose();
-    otherEducationController.dispose();
+    linkedinController.dispose();
     currentCityStateController.dispose();
     currentJobTitleController.dispose();
     currentCompanyController.dispose();

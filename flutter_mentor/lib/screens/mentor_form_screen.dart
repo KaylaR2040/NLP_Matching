@@ -110,13 +110,6 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
                     const SizedBox(height: 16),
                     FormFieldWidgets.buildTextField(
                       context,
-                      _formData.joinDateController,
-                      'Join Date (YYYY-MM-DD)',
-                      true,
-                    ),
-                    const SizedBox(height: 16),
-                    FormFieldWidgets.buildTextField(
-                      context,
                       _formData.firstNameController,
                       'First Name',
                       true,
@@ -129,34 +122,9 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
                       true,
                     ),
                     const SizedBox(height: 16),
-                    _buildGraduationYearField(context),
+                    _buildLinkedInField(context),
                     const SizedBox(height: 16),
-                    _buildDegreeLevelsField(context),
-                    const SizedBox(height: 16),
-                    FormFieldWidgets.buildDegreeProgramField(
-                      context,
-                      _formData.degreeLevels,
-                      _formData.degreePrograms,
-                      (value) => setState(() {
-                        _formData.degreePrograms
-                          ..clear()
-                          ..addAll(value);
-                      }),
-                    ),
-                    const SizedBox(height: 16),
-                    FormFieldWidgets.buildTextField(
-                      context,
-                      _formData.otherDegreeController,
-                      'Other Degree/Major (if not listed)',
-                      false,
-                    ),
-                    const SizedBox(height: 16),
-                    FormFieldWidgets.buildTextField(
-                      context,
-                      _formData.otherEducationController,
-                      'Other Education',
-                      false,
-                    ),
+                    _buildDegreesSection(context),
                     const SizedBox(height: 16),
                     FormFieldWidgets.buildTextField(
                       context,
@@ -213,19 +181,6 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
                       _formData.previousInvolvementOrgs,
                       (value) => setState(() {
                         _formData.previousInvolvementOrgs
-                          ..clear()
-                          ..addAll(value);
-                      }),
-                    ),
-                    const SizedBox(height: 16),
-                    FormFieldWidgets.buildMultiSelectChips(
-                      context,
-                      'Term availability (select all terms you can mentor)',
-                      null,
-                      FormOptions.termOptions,
-                      _formData.availableTerms,
-                      (value) => setState(() {
-                        _formData.availableTerms
                           ..clear()
                           ..addAll(value);
                       }),
@@ -289,46 +244,201 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
     );
   }
 
-  Widget _buildGraduationYearField(BuildContext context) {
+  Widget _buildLinkedInField(BuildContext context) {
+    return FormFieldWidgets.buildTextField(
+      context,
+      _formData.linkedinController,
+      'LinkedIn profile URL',
+      false,
+    );
+  }
+
+  Widget _buildDegreesSection(BuildContext context) {
+    final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Graduation Year *',
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Degree(s) from NC State *',
+              style: theme.textTheme.bodyLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+            TextButton.icon(
+              onPressed: _openDegreeDialog,
+              icon: const Icon(Icons.add),
+              label: const Text('Add degree'),
+            ),
+          ],
         ),
         const SizedBox(height: 8),
-        DropdownButtonFormField<String>(
-          value: _formData.graduationYear,
-          decoration: const InputDecoration(border: OutlineInputBorder()),
-          items: FormOptions.getGraduationYears()
-              .map((year) => DropdownMenuItem(value: year, child: Text(year)))
-              .toList(),
-          onChanged: (value) => setState(() => _formData.graduationYear = value),
-        ),
+        if (_formData.degrees.isEmpty)
+          Text(
+            'Add your degree level, program, and graduation year.',
+            style: theme.textTheme.bodyMedium,
+          )
+        else
+          Column(
+            children: _formData.degrees
+                .asMap()
+                .entries
+                .map(
+                  (entry) => Card(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    child: ListTile(
+                      title: Text('${entry.value.level} in ${entry.value.program}'),
+                      subtitle: Text('Graduated ${entry.value.graduationYear}'),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit),
+                            onPressed: () => _openDegreeDialog(
+                              existing: entry.value,
+                              index: entry.key,
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline),
+                            onPressed: () => setState(
+                              () => _formData.degrees.removeAt(entry.key),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
       ],
     );
   }
 
-  Widget _buildDegreeLevelsField(BuildContext context) {
-    return FormFieldWidgets.buildMultiSelectChips(
-      context,
-      'Degree level(s) from NC State *',
-      'Select all that apply',
-      FormOptions.degreeLevels,
-      _formData.degreeLevels,
-      (value) => setState(() {
-        _formData.degreeLevels
-          ..clear()
-          ..addAll(value);
-        final allowedPrograms =
-            FormOptions.getDegreeProgramsForLevels(_formData.degreeLevels);
-        _formData.degreePrograms
-            .removeWhere((program) => !allowedPrograms.contains(program));
-      }),
+  Future<void> _openDegreeDialog({DegreeEntry? existing, int? index}) async {
+    String? selectedLevel = existing?.level;
+    String? selectedProgram = existing?.program;
+    String? selectedYear = existing?.graduationYear;
+
+    DegreeEntry? result;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            final programOptions = selectedLevel == null
+                ? <String>[]
+                : FormOptions.getDegreeProgramsForLevels([selectedLevel!]);
+            if (selectedProgram != null &&
+                selectedProgram!.isNotEmpty &&
+                !programOptions.contains(selectedProgram)) {
+              selectedProgram = null;
+            }
+
+            return AlertDialog(
+              title: Text(existing == null ? 'Add degree' : 'Edit degree'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButtonFormField<String>(
+                    value: selectedLevel,
+                    decoration: const InputDecoration(
+                      labelText: 'Degree level',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: FormOptions.degreeLevels
+                        .map(
+                          (level) => DropdownMenuItem(
+                            value: level,
+                            child: Text(level),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) => setStateDialog(() {
+                      selectedLevel = value;
+                      selectedProgram = null;
+                    }),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: selectedProgram,
+                    decoration: const InputDecoration(
+                      labelText: 'Degree program / major',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: programOptions
+                        .map(
+                          (program) => DropdownMenuItem(
+                            value: program,
+                            child: Text(program),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) => setStateDialog(() {
+                      selectedProgram = value;
+                    }),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: selectedYear,
+                    decoration: const InputDecoration(
+                      labelText: 'Graduation year',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: FormOptions.getGraduationYears()
+                        .map(
+                          (year) => DropdownMenuItem(
+                            value: year,
+                            child: Text(year),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) => setStateDialog(() {
+                      selectedYear = value;
+                    }),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    if (selectedLevel != null &&
+                        selectedProgram != null &&
+                        selectedYear != null) {
+                      result = DegreeEntry(
+                        level: selectedLevel!,
+                        program: selectedProgram!,
+                        graduationYear: selectedYear!,
+                      );
+                      Navigator.pop(dialogContext);
+                    }
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
+
+    if (result != null) {
+      setState(() {
+        if (index != null) {
+          _formData.degrees[index] = result!;
+        } else {
+          _formData.degrees.add(result!);
+        }
+      });
+    }
   }
 
   void _submitForm() async {
