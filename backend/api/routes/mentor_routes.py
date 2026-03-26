@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from ..models.mentor import Mentor
+from ..services.google_forms import GoogleFormSubmissionError, submit_google_form
 
 router = APIRouter()
 
@@ -38,12 +39,14 @@ async def submit_mentor(mentor_data: Dict = Body(...)):
     try:
         # Validate and create mentor object
         mentor = Mentor(**mentor_data)
+        mentor_record = mentor.to_dict()
+        google_form_result = submit_google_form("mentor", mentor_record)
         
         # Load existing mentors
         mentors = load_mentors()
         
         # Add new mentor
-        mentors.append(mentor.to_dict())
+        mentors.append(mentor_record)
         
         # Save updated list
         save_mentors(mentors)
@@ -52,10 +55,16 @@ async def submit_mentor(mentor_data: Dict = Body(...)):
             "success": True,
             "message": "Mentor application submitted successfully",
             "mentor_id": mentor.id,
-            "data": mentor.to_dict()
+            "data": mentor_record,
+            "google_form": google_form_result.to_dict(),
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Invalid data: {str(e)}")
+    except GoogleFormSubmissionError as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Google Form submission failed: {str(e)}",
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error submitting application: {str(e)}")
 

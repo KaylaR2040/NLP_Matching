@@ -2,9 +2,9 @@ from fastapi import APIRouter, HTTPException, Body
 from typing import List, Dict
 import json
 from pathlib import Path
-from datetime import datetime
 
 from ..models.mentee import Mentee
+from ..services.google_forms import GoogleFormSubmissionError, submit_google_form
 
 router = APIRouter()
 
@@ -39,12 +39,14 @@ async def submit_mentee(mentee_data: Dict = Body(...)):
     try:
         # Validate and create mentee object
         mentee = Mentee(**mentee_data)
+        mentee_record = mentee.to_dict()
+        google_form_result = submit_google_form("mentee", mentee_record)
         
         # Load existing mentees
         mentees = load_mentees()
         
         # Add new mentee
-        mentees.append(mentee.to_dict())
+        mentees.append(mentee_record)
         
         # Save updated list
         save_mentees(mentees)
@@ -53,10 +55,16 @@ async def submit_mentee(mentee_data: Dict = Body(...)):
             "success": True,
             "message": "Mentee application submitted successfully",
             "mentee_id": mentee.id,
-            "data": mentee.to_dict()
+            "data": mentee_record,
+            "google_form": google_form_result.to_dict(),
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Invalid data: {str(e)}")
+    except GoogleFormSubmissionError as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Google Form submission failed: {str(e)}",
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error submitting application: {str(e)}")
 

@@ -4,7 +4,7 @@ import '../models/mentor_form_data.dart';
 
 class ApiService {
   // Change this to your deployed backend URL in production
-  static const String baseUrl = 'http://localhost:8000/api';
+  static const String baseUrl = 'https://mentorform.vercel.app';
 
   /// Submit a mentor application to the backend
   static Future<Map<String, dynamic>> submitMentorApplication(

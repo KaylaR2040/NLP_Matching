@@ -9,7 +9,7 @@ import '../models/mentee_form_data.dart';
 ///   NLP matcher reads from mentees.json (NOT from the old data/ CSV files)
 class ApiService {
   // Change this to your deployed URL in production
-  static const String baseUrl = 'http://localhost:8000/api';
+  static const String baseUrl = 'https://menteeform.vercel.app';
 
   /// Submit a mentee application to the backend
   /// Called when the form submit button is pressed
