@@ -11,7 +11,7 @@ class ApiService {
     MentorFormData formData,
   ) async {
     try {
-      final url = Uri.parse('$baseUrl/mentors/');
+      final url = Uri.parse('$baseUrl/mentors');
       final jsonData = formData.toJson();
 
       final response = await http.post(
@@ -47,7 +47,7 @@ class ApiService {
   /// Get all submitted mentors
   static Future<List<dynamic>> getAllMentors() async {
     try {
-      final url = Uri.parse('$baseUrl/mentors/');
+      final url = Uri.parse('$baseUrl/mentors');
       final response = await http.get(url);
       if (response.statusCode == 200) {
         final body = response.body.trim();

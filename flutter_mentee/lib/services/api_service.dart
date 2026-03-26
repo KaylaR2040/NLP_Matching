@@ -5,7 +5,7 @@ import '../models/mentee_form_data.dart';
 /// API service to connect the Flutter mentee form to the backend
 ///
 /// Data flow:
-///   Flutter form -> toJson() -> POST /api/mentees/ -> backend stores in mentees.json
+///   Flutter form -> toJson() -> POST /api/mentees -> backend stores in mentees.json
 ///   NLP matcher reads from mentees.json (NOT from the old data/ CSV files)
 class ApiService {
   // Web app host. API requests are expected under /api on the same domain.
@@ -17,7 +17,7 @@ class ApiService {
     MenteeFormData formData,
   ) async {
     try {
-      final url = Uri.parse('$baseUrl/mentees/');
+      final url = Uri.parse('$baseUrl/mentees');
       final jsonData = formData.toJson();
 
       final response = await http.post(
@@ -52,7 +52,7 @@ class ApiService {
   /// Get all submitted mentees
   static Future<List<dynamic>> getAllMentees() async {
     try {
-      final url = Uri.parse('$baseUrl/mentees/');
+      final url = Uri.parse('$baseUrl/mentees');
       final response = await http.get(url);
       if (response.statusCode == 200) {
         final data = _decodeJsonValue(response);
