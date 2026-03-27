@@ -149,10 +149,10 @@ def submit_google_form(form_type: str, submission_data: Dict[str, Any]) -> Googl
                 forwarded=False,
                 skipped=True,
                 status_code=exc.code,
-                reason=f"Google Form returned HTTP {exc.code}",
+                reason=_describe_google_form_http_error(exc.code),
             )
         raise GoogleFormSubmissionError(
-            f"Google Form returned HTTP {exc.code}"
+            _describe_google_form_http_error(exc.code)
         ) from exc
     except error.URLError as exc:
         if not config.required:
@@ -249,3 +249,13 @@ def _normalize_google_form_response_url(raw_url: str) -> str:
         return parse.urlunparse(parsed)
 
     return cleaned
+
+
+def _describe_google_form_http_error(status_code: int) -> str:
+    if status_code == 401:
+        return (
+            "Google Form returned HTTP 401. This form currently requires Google "
+            "sign-in or organization access. Disable form sign-in restriction, "
+            "or submit through a logged-in browser session for the same domain."
+        )
+    return f"Google Form returned HTTP {status_code}"

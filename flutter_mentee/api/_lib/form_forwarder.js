@@ -70,6 +70,17 @@ function stringifyValue(value) {
   return String(value);
 }
 
+function describeGoogleFormHttpError(statusCode) {
+  if (statusCode === 401) {
+    return (
+      "Google Form returned HTTP 401. This form currently requires Google sign-in " +
+      "or organization access. Disable form sign-in restriction, or submit through a " +
+      "logged-in browser session for the same Google Workspace domain."
+    );
+  }
+  return `Google Form returned HTTP ${statusCode}`;
+}
+
 function buildPayload(config, submissionData) {
   const fieldMap = config.fieldMap || {};
   const entries = Object.entries(fieldMap);
@@ -123,14 +134,14 @@ async function submitToGoogleForm(config, submissionData) {
 
     const ok = response.status < 400;
     if (!ok && required) {
-      throw new Error(`Google Form returned HTTP ${response.status}`);
+      throw new Error(describeGoogleFormHttpError(response.status));
     }
 
     return {
       forwarded: ok,
       skipped: !ok,
       status_code: response.status,
-      reason: ok ? "Submitted to Google Form" : `Google Form returned HTTP ${response.status}`,
+      reason: ok ? "Submitted to Google Form" : describeGoogleFormHttpError(response.status),
     };
   } catch (error) {
     if (required) {
