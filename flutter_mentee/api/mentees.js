@@ -1,35 +1,7 @@
 const { randomUUID } = require("crypto");
-const { parseBool, parseJsonObject, submitToGoogleForm } = require("./_lib/form_forwarder");
-
-const DEFAULT_MENTEE_FORM_RESPONSE_URL =
-  "https://docs.google.com/forms/d/e/1FAIpQLScEp0vvZtkpEtWFxPthh5xbGr0rcEt5k6Zd8CjbTeXHT-VskA/formResponse";
-const DEFAULT_MENTEE_JSON_ENTRY_ID = "";
-const DEFAULT_MENTEE_FIELD_MAP = {
-  email: "entry.949801267",
-  firstName: "entry.926900860",
-  lastName: "entry.1983684609",
-  pronouns: "entry.1976491083",
-  educationLevel: "entry.1337254110",
-  graduationSemester: "entry.1583993810",
-  graduationYear: "entry.1943297115",
-  degreePrograms: "entry.2094001975",
-  hasConcentration: "entry.1479506346",
-  concentrations: "entry.1579760704",
-  phdSpecialization: "entry.2117423693",
-  previousMentorship: "entry.705448099",
-  studentOrgs: "entry.562009089",
-  experienceLevel: "entry.2016076981",
-  industriesOfInterest: "entry.867933932",
-  aboutYourself: "entry.1834469658",
-  matchByIndustry: "entry.162617210",
-  matchByDegree: "entry.549463769",
-  matchByClubs: "entry.1801459898",
-  matchByIdentity: "entry.76037252",
-  matchByGradYears: "entry.1948682182",
-  helpTopics: "entry.1538022217",
-  submissionId: "entry.1192108296",
-  submittedAt: "entry.1799865324",
-};
+const { submitToGoogleForm } = require("./_lib/form_forwarder");
+const { buildGoogleFormConfig } = require("./_lib/google_form_config");
+const { MENTEE_PREFILLED_LINK, MENTEE_FIELD_ORDER } = require("./_lib/mentee_form_definition");
 
 function parseRequestBody(req) {
   if (!req.body) {
@@ -84,19 +56,16 @@ module.exports = async (req, res) => {
     submitted_at: submittedAt,
   };
 
-  const config = {
-    formName: "mentee",
-    enabled: parseBool(process.env.MENTEE_GOOGLE_FORM_ENABLED, true),
-    required: parseBool(process.env.MENTEE_GOOGLE_FORM_REQUIRED, true),
-    responseUrl: process.env.MENTEE_GOOGLE_FORM_RESPONSE_URL || DEFAULT_MENTEE_FORM_RESPONSE_URL,
-    jsonEntryId: process.env.MENTEE_GOOGLE_FORM_JSON_ENTRY_ID || DEFAULT_MENTEE_JSON_ENTRY_ID,
-    fieldMap: parseJsonObject(
-      process.env.MENTEE_GOOGLE_FORM_FIELD_MAP_JSON,
-      DEFAULT_MENTEE_FIELD_MAP,
-    ),
-  };
-
   try {
+    const config = buildGoogleFormConfig({
+      formName: "mentee",
+      envPrefix: "MENTEE_GOOGLE_FORM",
+      prefilledLink: process.env.MENTEE_GOOGLE_FORM_PREFILLED_LINK || MENTEE_PREFILLED_LINK,
+      fieldOrder: MENTEE_FIELD_ORDER,
+      defaultEnabled: true,
+      defaultRequired: true,
+    });
+
     const googleForm = await submitToGoogleForm(config, menteeRecord);
     return res.status(200).json({
       success: true,

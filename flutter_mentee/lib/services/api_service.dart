@@ -2,11 +2,6 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/mentee_form_data.dart';
 
-/// API service to connect the Flutter mentee form to the backend
-///
-/// Data flow:
-///   Flutter form -> toJson() -> POST /api/mentees -> backend stores in mentees.json
-///   NLP matcher reads from mentees.json (NOT from the old data/ CSV files)
 class ApiService {
   // Web app host. API requests are expected under /api on the same domain.
   static const String baseUrl = 'https://menteeform.vercel.app/api';
@@ -47,89 +42,6 @@ class ApiService {
       };
     } catch (e) {
       return {'success': false, 'error': 'Could not connect to server: $e'};
-    }
-  }
-
-  /// Get all submitted mentees
-  static Future<List<dynamic>> getAllMentees() async {
-    try {
-      final url = Uri.parse('$baseUrl/mentees');
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final data = _decodeJsonValue(response);
-        if (data is List<dynamic>) {
-          return data;
-        }
-        throw Exception(_describeUnexpectedResponse(response));
-      }
-      throw Exception('Failed to load mentees');
-    } catch (e) {
-      throw Exception('Network error: $e');
-    }
-  }
-
-  /// Get backend statistics
-  static Future<Map<String, dynamic>> getStats() async {
-    try {
-      final url = Uri.parse('$baseUrl/stats');
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final data = _decodeJsonValue(response);
-        if (data is Map<String, dynamic>) {
-          return data;
-        }
-        throw Exception(_describeUnexpectedResponse(response));
-      }
-      throw Exception('Failed to load statistics');
-    } catch (e) {
-      throw Exception('Network error: $e');
-    }
-  }
-
-  /// Trigger the NLP matching algorithm
-  static Future<Map<String, dynamic>> runMatching({int topK = 5}) async {
-    try {
-      final url = Uri.parse('$baseUrl/matching/run?top_k=$topK');
-      final response = await http.post(url);
-      if (response.statusCode == 200) {
-        final data = _decodeJsonValue(response);
-        if (data is Map<String, dynamic>) {
-          return data;
-        }
-        throw Exception(_describeUnexpectedResponse(response));
-      }
-      final errorData = _decodeJsonBody(response);
-      throw Exception(
-        errorData?['detail']?.toString() ??
-            _describeUnexpectedResponse(response),
-      );
-    } catch (e) {
-      throw Exception('Network error: $e');
-    }
-  }
-
-  /// Get matches for a specific mentee
-  static Future<Map<String, dynamic>> getMenteeMatches(
-    String menteeId, {
-    int topK = 5,
-  }) async {
-    try {
-      final url = Uri.parse('$baseUrl/matching/mentee/$menteeId?top_k=$topK');
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final data = _decodeJsonValue(response);
-        if (data is Map<String, dynamic>) {
-          return data;
-        }
-        throw Exception(_describeUnexpectedResponse(response));
-      }
-      final errorData = _decodeJsonBody(response);
-      throw Exception(
-        errorData?['detail']?.toString() ??
-            _describeUnexpectedResponse(response),
-      );
-    } catch (e) {
-      throw Exception('Network error: $e');
     }
   }
 

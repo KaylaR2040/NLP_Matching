@@ -44,29 +44,6 @@ class ApiService {
     }
   }
 
-  /// Get all submitted mentors
-  static Future<List<dynamic>> getAllMentors() async {
-    try {
-      final url = Uri.parse('$baseUrl/mentors');
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final body = response.body.trim();
-        if (body.isEmpty) {
-          return [];
-        }
-        final decoded = json.decode(body);
-        if (decoded is List<dynamic>) {
-          return decoded;
-        }
-        return [];
-      }
-      return [];
-    } catch (e) {
-      print('Error fetching mentors: $e');
-      return [];
-    }
-  }
-
   static Map<String, dynamic>? _decodeJsonBody(http.Response response) {
     final body = response.body.trim();
     if (body.isEmpty) {
