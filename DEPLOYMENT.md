@@ -47,6 +47,11 @@ Mentor equivalents are also supported:
 - `MENTOR_GOOGLE_FORM_JSON_ENTRY_ID`
 - `MENTOR_GOOGLE_FORM_FIELD_MAP_JSON`
 
+Current mentor default is full-JSON forwarding to:
+
+- `https://docs.google.com/forms/d/e/1FAIpQLSes-SnnWAMcXzU_CsX6opYIpKxGu3Ii1BqfhMDUfN9IV4-pqQ/formResponse`
+- entry id `entry.1048570048`
+
 ## Optional Full Backend Mode (Render)
 
 If you want persistent JSON storage + NLP matching endpoints, deploy `backend/` on Render via [render.yaml](/Users/kaylaradu/GitHubRepos/NLP_Matching/render.yaml). This is optional for the Google Form forwarding test.

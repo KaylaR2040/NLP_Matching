@@ -1,6 +1,10 @@
 const { randomUUID } = require("crypto");
 const { parseBool, parseJsonObject, submitToGoogleForm } = require("./_lib/form_forwarder");
 
+const DEFAULT_MENTOR_FORM_RESPONSE_URL =
+  "https://docs.google.com/forms/d/e/1FAIpQLSes-SnnWAMcXzU_CsX6opYIpKxGu3Ii1BqfhMDUfN9IV4-pqQ/formResponse";
+const DEFAULT_MENTOR_JSON_ENTRY_ID = "entry.1048570048";
+
 function parseRequestBody(req) {
   if (!req.body) {
     return {};
@@ -43,10 +47,11 @@ module.exports = async (req, res) => {
 
   const config = {
     formName: "mentor",
-    enabled: parseBool(process.env.MENTOR_GOOGLE_FORM_ENABLED, false),
-    required: parseBool(process.env.MENTOR_GOOGLE_FORM_REQUIRED, false),
-    responseUrl: process.env.MENTOR_GOOGLE_FORM_RESPONSE_URL || "",
-    jsonEntryId: process.env.MENTOR_GOOGLE_FORM_JSON_ENTRY_ID || "",
+    enabled: parseBool(process.env.MENTOR_GOOGLE_FORM_ENABLED, true),
+    required: parseBool(process.env.MENTOR_GOOGLE_FORM_REQUIRED, true),
+    responseUrl:
+      process.env.MENTOR_GOOGLE_FORM_RESPONSE_URL || DEFAULT_MENTOR_FORM_RESPONSE_URL,
+    jsonEntryId: process.env.MENTOR_GOOGLE_FORM_JSON_ENTRY_ID || DEFAULT_MENTOR_JSON_ENTRY_ID,
     fieldMap: parseJsonObject(process.env.MENTOR_GOOGLE_FORM_FIELD_MAP_JSON, {}),
   };
 

@@ -21,13 +21,13 @@ services:
       - key: MENTEE_GOOGLE_FORM_JSON_ENTRY_ID
         value: ""
       - key: MENTOR_GOOGLE_FORM_ENABLED
-        value: "false"
+        value: "true"
       - key: MENTOR_GOOGLE_FORM_REQUIRED
-        value: "false"
+        value: "true"
       - key: MENTOR_GOOGLE_FORM_RESPONSE_URL
-        value: ""
+        value: "https://docs.google.com/forms/d/e/1FAIpQLSes-SnnWAMcXzU_CsX6opYIpKxGu3Ii1BqfhMDUfN9IV4-pqQ/formResponse"
       - key: MENTOR_GOOGLE_FORM_JSON_ENTRY_ID
-        value: ""
+        value: "entry.1048570048"
     disk:
       name: nlp-matching-storage
       mountPath: /var/data

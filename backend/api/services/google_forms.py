@@ -93,19 +93,24 @@ def get_google_form_config(form_type: str) -> GoogleFormConfig:
         )
 
     if normalized == "mentor":
+        default_mentor_url = (
+            "https://docs.google.com/forms/d/e/"
+            "1FAIpQLSes-SnnWAMcXzU_CsX6opYIpKxGu3Ii1BqfhMDUfN9IV4-pqQ/"
+            "formResponse"
+        )
         return GoogleFormConfig(
             form_name="mentor",
             response_url=_normalize_google_form_response_url(
-                os.getenv("MENTOR_GOOGLE_FORM_RESPONSE_URL", "")
+                os.getenv("MENTOR_GOOGLE_FORM_RESPONSE_URL", default_mentor_url)
             ),
-            json_entry_id=os.getenv("MENTOR_GOOGLE_FORM_JSON_ENTRY_ID", ""),
+            json_entry_id=os.getenv("MENTOR_GOOGLE_FORM_JSON_ENTRY_ID", "entry.1048570048"),
             field_map=_parse_field_map(
                 os.getenv("MENTOR_GOOGLE_FORM_FIELD_MAP_JSON"),
                 {},
             ),
-            enabled=os.getenv("MENTOR_GOOGLE_FORM_ENABLED", "false").lower()
+            enabled=os.getenv("MENTOR_GOOGLE_FORM_ENABLED", "true").lower()
             == "true",
-            required=os.getenv("MENTOR_GOOGLE_FORM_REQUIRED", "false").lower()
+            required=os.getenv("MENTOR_GOOGLE_FORM_REQUIRED", "true").lower()
             == "true",
         )
 
