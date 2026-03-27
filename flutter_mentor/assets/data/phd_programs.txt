@@ -1,19 +1,2 @@
-
-Artificial Intelligence and Machine Learning Concentration
-Computer Architecture and Emerging Systems Concentration
-Computer Systems Software Concentration
-Embedded Systems Concentration
-Networking Hardware Concentration
-Networking Software Concentration
-Analog Circuits Concentration
-Artificial Intelligence and Machine Learning Concentration
-Biomedical Instrumentation Concentration
-Communications and Signal Processing Concentration
-Controls and Robotics Concentration
-Digital Circuits Concentration
-Electronic Devices Concentrations
-Music Technology Concentration
-Optics and Photonics Concentration
-Power Systems Concentration
-Radio Frequency Circuits Concentration
-Renewable Electric Energy Systems Concentration
+PhD Computer Engineering 
+PhD Electrical Engineering

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:uuid/uuid.dart';
 import '../models/mentee_form_data.dart';
 
 /// API service to connect the Flutter mentee form to the backend
@@ -10,6 +11,8 @@ import '../models/mentee_form_data.dart';
 class ApiService {
   // Web app host. API requests are expected under /api on the same domain.
   static const String baseUrl = 'https://menteeform.vercel.app/api';
+  static const String _googleFormEndpoint =
+      'https://docs.google.com/forms/d/e/1FAIpQLScEp0vvZtkpEtWFxPthh5xbGr0rcEt5k6Zd8CjbTeXHT-VskA/formResponse';
 
   /// Submit a mentee application to the backend
   /// Called when the form submit button is pressed
@@ -17,36 +20,61 @@ class ApiService {
     MenteeFormData formData,
   ) async {
     try {
-      final url = Uri.parse('$baseUrl/mentees');
-      final jsonData = formData.toJson();
+      final url = Uri.parse(_googleFormEndpoint);
+      final submissionId = const Uuid().v4();
+      final submittedAt = DateTime.now().toIso8601String();
+
+      final body = {
+        'entry.949801267': formData.emailController.text.trim(),
+        'entry.926900860': formData.firstNameController.text.trim(),
+        'entry.1983684609': formData.lastNameController.text.trim(),
+        'entry.1976491083': formData.pronouns ?? '',
+        'entry.1337254110': formData.educationLevel ?? '',
+        'entry.1583993810': formData.graduationSemester ?? '',
+        'entry.1943297115': formData.graduationYear ?? '',
+        'entry.2094001975': _joinList(formData.degreePrograms),
+        'entry.1479506346': formData.hasConcentration ? 'Yes' : 'No',
+        'entry.1579760704': _joinList(formData.concentrations),
+        'entry.2117423693': formData.phdSpecializationController.text.trim(),
+        'entry.705448099': _boolToYesNo(formData.previousMentorship),
+        'entry.562009089': _joinList(formData.studentOrgs),
+        'entry.2016076981': formData.experienceLevel ?? '',
+        'entry.867933932': _joinList(formData.industriesOfInterest),
+        'entry.1834469658': formData.aboutYourselfController.text.trim(),
+        'entry.162617210': formData.matchByIndustry.toString(),
+        'entry.549463769': formData.matchByDegree.toString(),
+        'entry.1801459898': formData.matchByClubs.toString(),
+        'entry.76037252': formData.matchByIdentity.toString(),
+        'entry.1948682182': formData.matchByGradYears.toString(),
+        'entry.1538022217': _joinList(formData.helpTopics),
+        'entry.1192108296': submissionId,
+        'entry.1799865324': submittedAt,
+      };
 
       final response = await http.post(
         url,
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode(jsonData),
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: body,
       );
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final responseData = _decodeJsonBody(response);
-        if (responseData == null) {
-          return {
-            'success': false,
-            'error':
-                'Server returned ${response.statusCode} with an empty or non-JSON body.',
-          };
-        }
-        return {'success': true, 'data': responseData};
-      } else {
-        final errorData = _decodeJsonBody(response);
-        final fallback = _describeUnexpectedResponse(response);
-        return {
-          'success': false,
-          'error': errorData?['detail']?.toString() ?? fallback,
-        };
+      if (response.statusCode >= 200 && response.statusCode < 400) {
+        return {'success': true};
       }
+
+      return {
+        'success': false,
+        'error': _describeUnexpectedResponse(response),
+      };
     } catch (e) {
       return {'success': false, 'error': 'Could not connect to server: $e'};
     }
+  }
+
+  static String _joinList(List<String> values) => values.join(', ');
+
+  static String _boolToYesNo(bool? value) {
+    if (value == null) return '';
+    return value ? 'Yes' : 'No';
   }
 
   /// Get all submitted mentees
