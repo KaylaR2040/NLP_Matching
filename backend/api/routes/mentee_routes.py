@@ -37,6 +37,8 @@ async def submit_mentee(mentee_data: Dict = Body(...)):
         # Validate and create mentee object
         mentee = Mentee(**mentee_data)
         mentee_record = mentee.to_dict()
+        mentee_record["submissionId"] = mentee_record.get("id", "")
+        mentee_record["submittedAt"] = mentee_record.get("submitted_at", "")
         google_form_result = submit_google_form("mentee", mentee_record)
         
         # Load existing mentees

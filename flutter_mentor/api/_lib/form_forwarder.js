@@ -5,6 +5,28 @@ function parseBool(value, defaultValue) {
   return String(value).toLowerCase() === "true";
 }
 
+function normalizeGoogleFormResponseUrl(rawUrl) {
+  if (!rawUrl) {
+    return "";
+  }
+
+  const cleaned = String(rawUrl).trim().replace(/\|/g, "I");
+  if (!cleaned) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(cleaned);
+    if (parsed.pathname.endsWith("/viewform")) {
+      parsed.pathname = parsed.pathname.replace(/\/viewform$/, "/formResponse");
+      parsed.search = "";
+    }
+    return parsed.toString();
+  } catch (_) {
+    return cleaned;
+  }
+}
+
 function parseJsonObject(value, defaultValue = {}) {
   if (!value) {
     return defaultValue;
@@ -37,7 +59,7 @@ function stringifyValue(value) {
     return "";
   }
   if (typeof value === "boolean") {
-    return value ? "Yes" : "No";
+    return value ? "YES" : "NO";
   }
   if (Array.isArray(value)) {
     return value.map(stringifyValue).join(", ");
@@ -76,7 +98,7 @@ function buildPayload(config, submissionData) {
 async function submitToGoogleForm(config, submissionData) {
   const enabled = parseBool(config.enabled, false);
   const required = parseBool(config.required, false);
-  const responseUrl = (config.responseUrl || "").trim();
+  const responseUrl = normalizeGoogleFormResponseUrl(config.responseUrl);
 
   if (!enabled || !responseUrl) {
     return {
@@ -124,6 +146,7 @@ async function submitToGoogleForm(config, submissionData) {
 }
 
 module.exports = {
+  normalizeGoogleFormResponseUrl,
   parseBool,
   parseJsonObject,
   submitToGoogleForm,

@@ -37,6 +37,8 @@ async def submit_mentor(mentor_data: Dict = Body(...)):
         # Validate and create mentor object
         mentor = Mentor(**mentor_data)
         mentor_record = mentor.to_dict()
+        mentor_record["submissionId"] = mentor_record.get("id", "")
+        mentor_record["submittedAt"] = mentor_record.get("submitted_at", "")
         google_form_result = submit_google_form("mentor", mentor_record)
         
         # Load existing mentors

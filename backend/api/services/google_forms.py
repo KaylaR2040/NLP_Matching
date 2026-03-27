@@ -4,6 +4,33 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Mapping, Optional
 from urllib import error, parse, request
 
+_DEFAULT_MENTEE_FIELD_MAP = {
+    "email": "entry.949801267",
+    "firstName": "entry.926900860",
+    "lastName": "entry.1983684609",
+    "pronouns": "entry.1976491083",
+    "educationLevel": "entry.1337254110",
+    "graduationSemester": "entry.1583993810",
+    "graduationYear": "entry.1943297115",
+    "degreePrograms": "entry.2094001975",
+    "hasConcentration": "entry.1479506346",
+    "concentrations": "entry.1579760704",
+    "phdSpecialization": "entry.2117423693",
+    "previousMentorship": "entry.705448099",
+    "studentOrgs": "entry.562009089",
+    "experienceLevel": "entry.2016076981",
+    "industriesOfInterest": "entry.867933932",
+    "aboutYourself": "entry.1834469658",
+    "matchByIndustry": "entry.162617210",
+    "matchByDegree": "entry.549463769",
+    "matchByClubs": "entry.1801459898",
+    "matchByIdentity": "entry.76037252",
+    "matchByGradYears": "entry.1948682182",
+    "helpTopics": "entry.1538022217",
+    "submissionId": "entry.1192108296",
+    "submittedAt": "entry.1799865324",
+}
+
 
 class GoogleFormSubmissionError(RuntimeError):
     """Raised when a Google Form submission cannot be completed."""
@@ -44,19 +71,20 @@ def get_google_form_config(form_type: str) -> GoogleFormConfig:
     normalized = form_type.strip().lower()
 
     if normalized == "mentee":
+        default_url = (
+            "https://docs.google.com/forms/d/e/"
+            "1FAIpQLScEp0vvZtkpEtWFxPthh5xbGr0rcEt5k6Zd8CjbTeXHT-VskA/"
+            "formResponse"
+        )
         return GoogleFormConfig(
             form_name="mentee",
-            response_url=os.getenv(
-                "MENTEE_GOOGLE_FORM_RESPONSE_URL",
-                (
-                    "https://docs.google.com/forms/d/e/"
-                    "1FAIpQLSes-SnnWAMcXzU_CsX6opYIpKxGu3Ii1BqfhMDUfN9IV4-pqQ/"
-                    "formResponse"
-                ),
+            response_url=_normalize_google_form_response_url(
+                os.getenv("MENTEE_GOOGLE_FORM_RESPONSE_URL", default_url)
             ),
-            json_entry_id=os.getenv(
-                "MENTEE_GOOGLE_FORM_JSON_ENTRY_ID",
-                "entry.1048570048",
+            json_entry_id=os.getenv("MENTEE_GOOGLE_FORM_JSON_ENTRY_ID", ""),
+            field_map=_parse_field_map(
+                os.getenv("MENTEE_GOOGLE_FORM_FIELD_MAP_JSON"),
+                _DEFAULT_MENTEE_FIELD_MAP,
             ),
             enabled=os.getenv("MENTEE_GOOGLE_FORM_ENABLED", "true").lower()
             == "true",
@@ -67,8 +95,14 @@ def get_google_form_config(form_type: str) -> GoogleFormConfig:
     if normalized == "mentor":
         return GoogleFormConfig(
             form_name="mentor",
-            response_url=os.getenv("MENTOR_GOOGLE_FORM_RESPONSE_URL", ""),
+            response_url=_normalize_google_form_response_url(
+                os.getenv("MENTOR_GOOGLE_FORM_RESPONSE_URL", "")
+            ),
             json_entry_id=os.getenv("MENTOR_GOOGLE_FORM_JSON_ENTRY_ID", ""),
+            field_map=_parse_field_map(
+                os.getenv("MENTOR_GOOGLE_FORM_FIELD_MAP_JSON"),
+                {},
+            ),
             enabled=os.getenv("MENTOR_GOOGLE_FORM_ENABLED", "false").lower()
             == "true",
             required=os.getenv("MENTOR_GOOGLE_FORM_REQUIRED", "false").lower()
@@ -174,9 +208,44 @@ def _stringify_value(value: Any) -> str:
     if value is None:
         return ""
     if isinstance(value, bool):
-        return "Yes" if value else "No"
+        return "YES" if value else "NO"
     if isinstance(value, list):
         return ", ".join(_stringify_value(item) for item in value)
     if isinstance(value, dict):
         return json.dumps(value, sort_keys=True, ensure_ascii=False)
     return str(value)
+
+
+def _parse_field_map(raw_json: Optional[str], default: Mapping[str, str]) -> Mapping[str, str]:
+    if not raw_json:
+        return dict(default)
+
+    try:
+        parsed = json.loads(raw_json)
+    except json.JSONDecodeError:
+        return dict(default)
+
+    if not isinstance(parsed, dict):
+        return dict(default)
+
+    normalized: Dict[str, str] = {}
+    for key, value in parsed.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            continue
+        normalized[key] = value
+
+    return normalized or dict(default)
+
+
+def _normalize_google_form_response_url(raw_url: str) -> str:
+    cleaned = raw_url.strip().replace("|", "I")
+    if not cleaned:
+        return ""
+
+    parsed = parse.urlparse(cleaned)
+    if parsed.path.endswith("/viewform"):
+        path = parsed.path[: -len("/viewform")] + "/formResponse"
+        parsed = parsed._replace(path=path, query="")
+        return parse.urlunparse(parsed)
+
+    return cleaned

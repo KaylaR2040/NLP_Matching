@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 
 class MenteeFormData {
-
   // Personal info
   final TextEditingController emailController;
   final TextEditingController firstNameController;
   final TextEditingController lastNameController;
   String? pronouns;
-  
+
   // Education + academic status
   String? educationLevel;
   String? graduationSemester;
@@ -16,23 +15,23 @@ class MenteeFormData {
   bool hasConcentration;
   final List<String> concentrations;
   final TextEditingController phdSpecializationController;
-  
+
   // Experience + Involvement
   bool? previousMentorship;
   List<String> studentOrgs;
-  String? experienceLevel;
-  
+  final List<String> experienceLevels;
+
   // Career Interests
   final List<String> industriesOfInterest;
   final TextEditingController aboutYourselfController;
-  
+
   // Matching Priorities (1-4 scale)
   double matchByIndustry;
   double matchByDegree;
   double matchByClubs;
   double matchByIdentity;
   double matchByGradYears;
-  
+
   // Mentoring Preferences
   final List<String> helpTopics;
 
@@ -50,7 +49,7 @@ class MenteeFormData {
     TextEditingController? phdSpecializationController,
     this.previousMentorship,
     List<String>? studentOrgs,
-    this.experienceLevel,
+    List<String>? experienceLevels,
     List<String>? industriesOfInterest,
     TextEditingController? aboutYourselfController,
     this.matchByIndustry = 2,
@@ -59,21 +58,25 @@ class MenteeFormData {
     this.matchByIdentity = 2,
     this.matchByGradYears = 2,
     List<String>? helpTopics,
-  })  : emailController = emailController ?? TextEditingController(),
-        firstNameController = firstNameController ?? TextEditingController(),
-        lastNameController = lastNameController ?? TextEditingController(),
-        degreePrograms = degreePrograms ?? [],
-        concentrations = concentrations ?? [],
-        phdSpecializationController = phdSpecializationController ?? TextEditingController(),
-        studentOrgs = studentOrgs ?? [],
-        industriesOfInterest = industriesOfInterest ?? [],
-        aboutYourselfController = aboutYourselfController ?? TextEditingController(),
-        helpTopics = helpTopics ?? [];
+  }) : emailController = emailController ?? TextEditingController(),
+       firstNameController = firstNameController ?? TextEditingController(),
+       lastNameController = lastNameController ?? TextEditingController(),
+       degreePrograms = degreePrograms ?? [],
+       concentrations = concentrations ?? [],
+       phdSpecializationController =
+           phdSpecializationController ?? TextEditingController(),
+       studentOrgs = studentOrgs ?? [],
+       experienceLevels = experienceLevels ?? [],
+       industriesOfInterest = industriesOfInterest ?? [],
+       aboutYourselfController =
+           aboutYourselfController ?? TextEditingController(),
+       helpTopics = helpTopics ?? [];
 
   List<String> validate() {
     final errors = <String>[];
-    
-    if (emailController.text.isEmpty || !emailController.text.endsWith('@ncsu.edu')) {
+
+    if (emailController.text.isEmpty ||
+        !emailController.text.endsWith('@ncsu.edu')) {
       errors.add('Please provide a valid NCSU email');
     }
     if (firstNameController.text.isEmpty) {
@@ -94,17 +97,22 @@ class MenteeFormData {
     if (degreePrograms.isEmpty) {
       errors.add('At least one degree program is required');
     }
-    if ((educationLevel == 'BS' || educationLevel == 'ABM') && hasConcentration && concentrations.isEmpty) {
-      errors.add('Please select at least one concentration or turn off the concentration toggle');
+    if ((educationLevel == 'BS' || educationLevel == 'ABM') &&
+        hasConcentration &&
+        concentrations.isEmpty) {
+      errors.add(
+        'Please select at least one concentration or turn off the concentration toggle',
+      );
     }
-    if (educationLevel == 'PhD' && phdSpecializationController.text.trim().isEmpty) {
+    if (educationLevel == 'PhD' &&
+        phdSpecializationController.text.trim().isEmpty) {
       errors.add('Please enter your PhD specialization');
     }
     if (previousMentorship == null) {
       errors.add('Previous mentorship question is required');
     }
-    if (experienceLevel == null) {
-      errors.add('Experience level is required');
+    if (experienceLevels.isEmpty) {
+      errors.add('Please select at least one experience item');
     }
     if (industriesOfInterest.isEmpty) {
       errors.add('At least one industry is required');
@@ -114,7 +122,6 @@ class MenteeFormData {
     }
     return errors;
   }
-
 
   Map<String, dynamic> toJson() {
     return {
@@ -131,7 +138,8 @@ class MenteeFormData {
       'phdSpecialization': phdSpecializationController.text.trim(),
       'previousMentorship': previousMentorship,
       'studentOrgs': studentOrgs,
-      'experienceLevel': experienceLevel,
+      'experienceLevels': experienceLevels,
+      'experienceLevel': experienceLevels.join(', '),
       'industriesOfInterest': industriesOfInterest,
       'aboutYourself': aboutYourselfController.text,
       'matchByIndustry': matchByIndustry,

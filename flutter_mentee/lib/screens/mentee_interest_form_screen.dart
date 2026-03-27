@@ -26,7 +26,7 @@ class _MenteeInterestFormScreenState extends State<MenteeInterestFormScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     return Scaffold(
       body: Form(
         key: _formKey,
@@ -39,10 +39,7 @@ class _MenteeInterestFormScreenState extends State<MenteeInterestFormScreen> {
                 padding: const EdgeInsets.all(32),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [
-                      NCSUColors.reynoldsRed,
-                      NCSUColors.wolfpackRed500,
-                    ],
+                    colors: [NCSUColors.reynoldsRed, NCSUColors.wolfpackRed500],
                   ),
                 ),
                 child: Column(
@@ -65,7 +62,7 @@ class _MenteeInterestFormScreenState extends State<MenteeInterestFormScreen> {
                   ],
                 ),
               ),
-              
+
               // Form content
               Container(
                 constraints: const BoxConstraints(maxWidth: 800),
@@ -74,8 +71,14 @@ class _MenteeInterestFormScreenState extends State<MenteeInterestFormScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Contact + identity
-                    FormFieldWidgets.buildSection(context, 'Contact + Identity'),
-                    FormFieldWidgets.buildEmailField(context, _formData.emailController),
+                    FormFieldWidgets.buildSection(
+                      context,
+                      'Contact + Identity',
+                    ),
+                    FormFieldWidgets.buildEmailField(
+                      context,
+                      _formData.emailController,
+                    ),
                     const SizedBox(height: 16),
                     FormFieldWidgets.buildTextField(
                       context,
@@ -97,9 +100,12 @@ class _MenteeInterestFormScreenState extends State<MenteeInterestFormScreen> {
                       (value) => setState(() => _formData.pronouns = value),
                     ),
                     const SizedBox(height: 32),
-                    
+
                     // Education + academic status
-                    FormFieldWidgets.buildSection(context, 'Education + Academic Status'),
+                    FormFieldWidgets.buildSection(
+                      context,
+                      'Education + Academic Status',
+                    ),
                     FormFieldWidgets.buildEducationLevelField(
                       context,
                       _formData.educationLevel,
@@ -116,8 +122,10 @@ class _MenteeInterestFormScreenState extends State<MenteeInterestFormScreen> {
                       context,
                       _formData.graduationSemester,
                       _formData.graduationYear,
-                      (value) => setState(() => _formData.graduationSemester = value),
-                      (value) => setState(() => _formData.graduationYear = value),
+                      (value) =>
+                          setState(() => _formData.graduationSemester = value),
+                      (value) =>
+                          setState(() => _formData.graduationYear = value),
                     ),
                     const SizedBox(height: 16),
                     FormFieldWidgets.buildDegreeProgramField(
@@ -130,7 +138,8 @@ class _MenteeInterestFormScreenState extends State<MenteeInterestFormScreen> {
                           ..addAll(value);
                       }),
                     ),
-                    if (_formData.educationLevel == 'BS' || _formData.educationLevel == 'ABM') ...[
+                    if (_formData.educationLevel == 'BS' ||
+                        _formData.educationLevel == 'ABM') ...[
                       const SizedBox(height: 16),
                       FormFieldWidgets.buildConcentrationField(
                         context,
@@ -159,12 +168,16 @@ class _MenteeInterestFormScreenState extends State<MenteeInterestFormScreen> {
                     ],
                     const SizedBox(height: 16),
                     // Experience + involvement
-                    FormFieldWidgets.buildSection(context, 'Experience + Involvement'),
+                    FormFieldWidgets.buildSection(
+                      context,
+                      'Experience + Involvement',
+                    ),
                     FormFieldWidgets.buildYesNoField(
                       context,
                       'Have you participated in this mentoring program before? *',
                       _formData.previousMentorship,
-                      (value) => setState(() => _formData.previousMentorship = value),
+                      (value) =>
+                          setState(() => _formData.previousMentorship = value),
                     ),
                     const SizedBox(height: 16),
                     FormFieldWidgets.buildOrganizationsField(
@@ -173,16 +186,20 @@ class _MenteeInterestFormScreenState extends State<MenteeInterestFormScreen> {
                       (value) => setState(() => _formData.studentOrgs = value),
                     ),
                     const SizedBox(height: 16),
-                    FormFieldWidgets.buildSingleSelectChips(
+                    FormFieldWidgets.buildMultiSelectChips(
                       context,
-                      'Current experience level *',
-                      null,
+                      'Current experience (select all that apply) *',
+                      'You can select internship, co-op, and research together',
                       FormOptions.experienceLevels,
-                      _formData.experienceLevel,
-                      (value) => setState(() => _formData.experienceLevel = value),
+                      _formData.experienceLevels,
+                      (value) => setState(() {
+                        _formData.experienceLevels
+                          ..clear()
+                          ..addAll(value);
+                      }),
                     ),
                     const SizedBox(height: 32),
-                    
+
                     // Career interests
                     FormFieldWidgets.buildSection(context, 'Career Interests'),
                     FormFieldWidgets.buildMultiSelectChips(
@@ -203,9 +220,12 @@ class _MenteeInterestFormScreenState extends State<MenteeInterestFormScreen> {
                       'Tell us about yourself, your interests, or anything you would like a mentor to know',
                     ),
                     const SizedBox(height: 32),
-                    
+
                     // Matching priorities
-                    FormFieldWidgets.buildSection(context, 'Matching Priorities'),
+                    FormFieldWidgets.buildSection(
+                      context,
+                      'Matching Priorities',
+                    ),
                     FormFieldWidgets.buildMatchingPrioritiesInfo(context),
                     const SizedBox(height: 16),
                     FormFieldWidgets.buildLikertScale(
@@ -243,9 +263,12 @@ class _MenteeInterestFormScreenState extends State<MenteeInterestFormScreen> {
                       (val) => setState(() => _formData.matchByGradYears = val),
                     ),
                     const SizedBox(height: 32),
-                    
+
                     // Mentoring preferences
-                    FormFieldWidgets.buildSection(context, 'Mentoring Preferences'),
+                    FormFieldWidgets.buildSection(
+                      context,
+                      'Mentoring Preferences',
+                    ),
                     FormFieldWidgets.buildMultiSelectChips(
                       context,
                       'Topics you would like help with *',
@@ -258,7 +281,7 @@ class _MenteeInterestFormScreenState extends State<MenteeInterestFormScreen> {
                       }),
                     ),
                     const SizedBox(height: 16),
-                    
+
                     // Submit button
                     SizedBox(
                       width: double.infinity,
@@ -289,7 +312,7 @@ class _MenteeInterestFormScreenState extends State<MenteeInterestFormScreen> {
 
   void _submitForm() async {
     final errors = _formData.validate();
-    
+
     if (errors.isNotEmpty) {
       showDialog(
         context: context,
@@ -301,10 +324,12 @@ class _MenteeInterestFormScreenState extends State<MenteeInterestFormScreen> {
             children: [
               const Text('Please complete the following:'),
               const SizedBox(height: 8),
-              ...errors.map((error) => Padding(
-                padding: const EdgeInsets.only(left: 8, top: 4),
-                child: Text('- $error'),
-              )),
+              ...errors.map(
+                (error) => Padding(
+                  padding: const EdgeInsets.only(left: 8, top: 4),
+                  child: Text('- $error'),
+                ),
+              ),
             ],
           ),
           actions: [
@@ -317,22 +342,20 @@ class _MenteeInterestFormScreenState extends State<MenteeInterestFormScreen> {
       );
       return;
     }
-    
+
     // Show loading indicator
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(),
-      ),
+      builder: (context) => const Center(child: CircularProgressIndicator()),
     );
-    
+
     // Submit to backend API
     final result = await ApiService.submitMenteeApplication(_formData);
-    
+
     // Close loading indicator
     if (mounted) Navigator.pop(context);
-    
+
     if (result['success'] == true) {
       if (mounted) {
         showDialog(
@@ -341,7 +364,7 @@ class _MenteeInterestFormScreenState extends State<MenteeInterestFormScreen> {
             title: const Text('Success'),
             content: const Text(
               'Your mentee interest form has been submitted successfully. '
-              'You will be matched with a mentor soon.'
+              'You will be matched with a mentor soon.',
             ),
             actions: [
               TextButton(
@@ -362,8 +385,8 @@ class _MenteeInterestFormScreenState extends State<MenteeInterestFormScreen> {
           builder: (context) => AlertDialog(
             title: const Text('Submission Error'),
             content: Text(
-              result['error']?.toString() ?? 
-              'An unexpected error occurred. Please try again.'
+              result['error']?.toString() ??
+                  'An unexpected error occurred. Please try again.',
             ),
             actions: [
               TextButton(
