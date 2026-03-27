@@ -1,0 +1,27 @@
+# MACOS
+.DS_Store
+
+# API KEYS
+.env
+
+# PYTHON
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+
+# FLUTTER
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+
+# VERCEL
+.vercel/
+
+# OTHER
+.idea/
