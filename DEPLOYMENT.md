@@ -47,10 +47,10 @@ Mentor equivalents are also supported:
 - `MENTOR_GOOGLE_FORM_JSON_ENTRY_ID`
 - `MENTOR_GOOGLE_FORM_FIELD_MAP_JSON`
 
-Current mentor default is full-JSON forwarding to:
+Current mentor default maps fields question-by-question to:
 
-- `https://docs.google.com/forms/d/e/1FAIpQLSes-SnnWAMcXzU_CsX6opYIpKxGu3Ii1BqfhMDUfN9IV4-pqQ/formResponse`
-- entry id `entry.1048570048`
+- `https://docs.google.com/forms/d/e/1FAIpQLScaKH4o1bXtz6rptxuX22C4MMncdPsbaQHsgq-1taXT0Rzm_Q/formResponse`
+- mapping is defined in `flutter_mentor/api/mentors.js` (`DEFAULT_MENTOR_FIELD_MAP`)
 
 ## Optional Full Backend Mode (Render)
 

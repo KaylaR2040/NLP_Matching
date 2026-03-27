@@ -72,7 +72,7 @@ class GoogleFormsTests(unittest.TestCase):
         self.assertEqual(payload["entry.111"], "Kayla")
         self.assertEqual(payload["entry.222"], "kayla@example.com")
         self.assertEqual(payload["entry.333"], "NLP, Embedded Systems")
-        self.assertEqual(payload["entry.444"], "No")
+        self.assertEqual(payload["entry.444"], "NO")
 
     @patch("backend.api.services.google_forms.request.urlopen")
     @patch("backend.api.services.google_forms.get_google_form_config")

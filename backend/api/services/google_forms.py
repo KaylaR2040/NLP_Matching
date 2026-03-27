@@ -31,6 +31,27 @@ _DEFAULT_MENTEE_FIELD_MAP = {
     "submittedAt": "entry.1799865324",
 }
 
+_DEFAULT_MENTOR_FIELD_MAP = {
+    "email": "entry.1811021320",
+    "linkedin": "entry.1690227157",
+    "firstName": "entry.1240690540",
+    "lastName": "entry.745059451",
+    "degreesSummary": "entry.592131172",
+    "currentCityState": "entry.243128393",
+    "currentJobTitle": "entry.234085726",
+    "currentCompany": "entry.1805619834",
+    "previousMentorship": "entry.1886772630",
+    "industryFocusArea": "entry.1140508330",
+    "previousInvolvement": "entry.1333231717",
+    "previousInvolvementOrgs": "entry.189983182",
+    "whyInterested": "entry.1588753995",
+    "professionalExperience": "entry.1252327633",
+    "aboutYourself": "entry.1822618015",
+    "studentsInterested": "entry.1820242654",
+    "submissionId": "entry.1760218787",
+    "submittedAt": "entry.856708681",
+}
+
 
 class GoogleFormSubmissionError(RuntimeError):
     """Raised when a Google Form submission cannot be completed."""
@@ -95,7 +116,7 @@ def get_google_form_config(form_type: str) -> GoogleFormConfig:
     if normalized == "mentor":
         default_mentor_url = (
             "https://docs.google.com/forms/d/e/"
-            "1FAIpQLSes-SnnWAMcXzU_CsX6opYIpKxGu3Ii1BqfhMDUfN9IV4-pqQ/"
+            "1FAIpQLScaKH4o1bXtz6rptxuX22C4MMncdPsbaQHsgq-1taXT0Rzm_Q/"
             "formResponse"
         )
         return GoogleFormConfig(
@@ -103,10 +124,10 @@ def get_google_form_config(form_type: str) -> GoogleFormConfig:
             response_url=_normalize_google_form_response_url(
                 os.getenv("MENTOR_GOOGLE_FORM_RESPONSE_URL", default_mentor_url)
             ),
-            json_entry_id=os.getenv("MENTOR_GOOGLE_FORM_JSON_ENTRY_ID", "entry.1048570048"),
+            json_entry_id=os.getenv("MENTOR_GOOGLE_FORM_JSON_ENTRY_ID", ""),
             field_map=_parse_field_map(
                 os.getenv("MENTOR_GOOGLE_FORM_FIELD_MAP_JSON"),
-                {},
+                _DEFAULT_MENTOR_FIELD_MAP,
             ),
             enabled=os.getenv("MENTOR_GOOGLE_FORM_ENABLED", "true").lower()
             == "true",

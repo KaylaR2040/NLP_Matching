@@ -39,6 +39,20 @@ async def submit_mentor(mentor_data: Dict = Body(...)):
         mentor_record = mentor.to_dict()
         mentor_record["submissionId"] = mentor_record.get("id", "")
         mentor_record["submittedAt"] = mentor_record.get("submitted_at", "")
+        degrees = mentor_record.get("degrees", [])
+        if isinstance(degrees, list):
+            pieces = []
+            for degree in degrees:
+                if not isinstance(degree, dict):
+                    continue
+                level = str(degree.get("level", "")).strip()
+                program = str(degree.get("program", "")).strip()
+                year = str(degree.get("graduationYear", "")).strip()
+                core = " ".join(part for part in [level, program] if part).strip()
+                if not core:
+                    continue
+                pieces.append(f"{core} ({year})" if year else core)
+            mentor_record["degreesSummary"] = "; ".join(pieces)
         google_form_result = submit_google_form("mentor", mentor_record)
         
         # Load existing mentors
