@@ -46,15 +46,62 @@ class FormOptions {
     'Other',
   ];
 
-  static const List<String> studentsCountOptions = [
-    '1 student',
-    '2 students',
-  ];
+  static const List<String> studentsCountOptions = ['1 student', '2 students'];
 
-  static const List<String> semester = [
-    'Fall',
-    'Spring',
-    'Summer',
+  static const List<String> semester = ['Fall', 'Spring', 'Summer'];
+
+  static const List<String> usStates = [
+    'AL',
+    'AK',
+    'AZ',
+    'AR',
+    'CA',
+    'CO',
+    'CT',
+    'DE',
+    'FL',
+    'GA',
+    'HI',
+    'ID',
+    'IL',
+    'IN',
+    'IA',
+    'KS',
+    'KY',
+    'LA',
+    'ME',
+    'MD',
+    'MA',
+    'MI',
+    'MN',
+    'MS',
+    'MO',
+    'MT',
+    'NE',
+    'NV',
+    'NH',
+    'NJ',
+    'NM',
+    'NY',
+    'NC',
+    'ND',
+    'OH',
+    'OK',
+    'OR',
+    'PA',
+    'RI',
+    'SC',
+    'SD',
+    'TN',
+    'TX',
+    'UT',
+    'VT',
+    'VA',
+    'WA',
+    'WV',
+    'WI',
+    'WY',
+    'DC',
   ];
 
   static List<String> get ncsuOrgs => _loader.ncsuOrgs;

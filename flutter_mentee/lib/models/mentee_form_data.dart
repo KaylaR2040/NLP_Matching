@@ -5,7 +5,7 @@ class MenteeFormData {
   final TextEditingController emailController;
   final TextEditingController firstNameController;
   final TextEditingController lastNameController;
-  String? pronouns;
+  final List<String> pronouns;
 
   // Education + academic status
   String? educationLevel;
@@ -39,7 +39,7 @@ class MenteeFormData {
     TextEditingController? emailController,
     TextEditingController? firstNameController,
     TextEditingController? lastNameController,
-    this.pronouns,
+    List<String>? pronouns,
     this.educationLevel,
     this.graduationSemester,
     this.graduationYear,
@@ -61,6 +61,7 @@ class MenteeFormData {
   }) : emailController = emailController ?? TextEditingController(),
        firstNameController = firstNameController ?? TextEditingController(),
        lastNameController = lastNameController ?? TextEditingController(),
+       pronouns = pronouns ?? [],
        degreePrograms = degreePrograms ?? [],
        concentrations = concentrations ?? [],
        phdSpecializationController =
@@ -85,8 +86,8 @@ class MenteeFormData {
     if (lastNameController.text.isEmpty) {
       errors.add('Last name is required');
     }
-    if (pronouns == null) {
-      errors.add('Pronouns selection is required');
+    if (pronouns.isEmpty) {
+      errors.add('At least one pronoun selection is required');
     }
     if (educationLevel == null) {
       errors.add('Education level is required');
@@ -129,6 +130,7 @@ class MenteeFormData {
       'firstName': firstNameController.text,
       'lastName': lastNameController.text,
       'pronouns': pronouns,
+      'pronounsText': pronouns.join(', '),
       'educationLevel': educationLevel,
       'graduationSemester': graduationSemester,
       'graduationYear': graduationYear,

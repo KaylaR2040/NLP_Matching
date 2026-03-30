@@ -13,10 +13,10 @@ class DegreeEntry {
   });
 
   Map<String, String> toJson() => {
-        'level': level,
-        'program': program,
-        'graduationYear': graduationYear,
-      };
+    'level': level,
+    'program': program,
+    'graduationYear': graduationYear,
+  };
 }
 
 class MentorFormData {
@@ -27,7 +27,8 @@ class MentorFormData {
 
   final List<DegreeEntry> degrees;
 
-  final TextEditingController currentCityStateController;
+  final TextEditingController currentCityController;
+  String? currentState;
   final TextEditingController currentJobTitleController;
   final TextEditingController currentCompanyController;
 
@@ -48,7 +49,8 @@ class MentorFormData {
     TextEditingController? lastNameController,
     TextEditingController? linkedinController,
     List<DegreeEntry>? degrees,
-    TextEditingController? currentCityStateController,
+    TextEditingController? currentCityController,
+    this.currentState,
     TextEditingController? currentJobTitleController,
     TextEditingController? currentCompanyController,
     this.previousMentorship,
@@ -59,27 +61,26 @@ class MentorFormData {
     TextEditingController? professionalExperienceController,
     TextEditingController? aboutYourselfController,
     this.studentsInterested,
-  })  : emailController = emailController ?? TextEditingController(),
-        firstNameController = firstNameController ?? TextEditingController(),
-        lastNameController = lastNameController ?? TextEditingController(),
-        linkedinController = linkedinController ?? TextEditingController(),
-        degrees = degrees ?? [],
-        currentCityStateController =
-            currentCityStateController ?? TextEditingController(),
-        currentJobTitleController =
-            currentJobTitleController ?? TextEditingController(),
-        currentCompanyController =
-            currentCompanyController ?? TextEditingController(),
-        previousInvolvementController =
-            previousInvolvementController ?? TextEditingController(),
-        industryFocusAreas = industryFocusAreas ?? [],
-        previousInvolvementOrgs = previousInvolvementOrgs ?? [],
-        whyInterestedController =
-            whyInterestedController ?? TextEditingController(),
-        professionalExperienceController =
-            professionalExperienceController ?? TextEditingController(),
-        aboutYourselfController =
-            aboutYourselfController ?? TextEditingController();
+  }) : emailController = emailController ?? TextEditingController(),
+       firstNameController = firstNameController ?? TextEditingController(),
+       lastNameController = lastNameController ?? TextEditingController(),
+       linkedinController = linkedinController ?? TextEditingController(),
+       degrees = degrees ?? [],
+       currentCityController = currentCityController ?? TextEditingController(),
+       currentJobTitleController =
+           currentJobTitleController ?? TextEditingController(),
+       currentCompanyController =
+           currentCompanyController ?? TextEditingController(),
+       previousInvolvementController =
+           previousInvolvementController ?? TextEditingController(),
+       industryFocusAreas = industryFocusAreas ?? [],
+       previousInvolvementOrgs = previousInvolvementOrgs ?? [],
+       whyInterestedController =
+           whyInterestedController ?? TextEditingController(),
+       professionalExperienceController =
+           professionalExperienceController ?? TextEditingController(),
+       aboutYourselfController =
+           aboutYourselfController ?? TextEditingController();
 
   List<String> validate() {
     final errors = <String>[];
@@ -105,8 +106,11 @@ class MentorFormData {
         break;
       }
     }
-    if (currentCityStateController.text.trim().isEmpty) {
-      errors.add('Current city/state is required');
+    if (currentCityController.text.trim().isEmpty) {
+      errors.add('Current city is required');
+    }
+    if (currentState == null || currentState!.trim().isEmpty) {
+      errors.add('Current state is required');
     }
     if (currentJobTitleController.text.trim().isEmpty) {
       errors.add('Current job title is required');
@@ -143,7 +147,13 @@ class MentorFormData {
       'firstName': firstNameController.text.trim(),
       'lastName': lastNameController.text.trim(),
       'degrees': degrees.map((d) => d.toJson()).toList(),
-      'currentCityState': currentCityStateController.text.trim(),
+      'currentCity': currentCityController.text.trim(),
+      'currentState': currentState,
+      'currentCityState': [
+        currentCityController.text.trim(),
+        if (currentState != null && currentState!.trim().isNotEmpty)
+          currentState!.trim(),
+      ].join(', '),
       'currentJobTitle': currentJobTitleController.text.trim(),
       'currentCompany': currentCompanyController.text.trim(),
       'previousMentorship': previousMentorship,
@@ -162,7 +172,7 @@ class MentorFormData {
     firstNameController.dispose();
     lastNameController.dispose();
     linkedinController.dispose();
-    currentCityStateController.dispose();
+    currentCityController.dispose();
     currentJobTitleController.dispose();
     currentCompanyController.dispose();
     previousInvolvementController.dispose();

@@ -97,7 +97,18 @@ class _MenteeInterestFormScreenState extends State<MenteeInterestFormScreen> {
                     FormFieldWidgets.buildPronounsField(
                       context,
                       _formData.pronouns,
-                      (value) => setState(() => _formData.pronouns = value),
+                      (value) async {
+                        final normalized = await _resolveOtherSelection(
+                          value,
+                          fieldLabel: 'Pronouns',
+                        );
+                        if (!mounted) return;
+                        setState(() {
+                          _formData.pronouns
+                            ..clear()
+                            ..addAll(normalized);
+                        });
+                      },
                     ),
                     const SizedBox(height: 32),
 
@@ -118,25 +129,22 @@ class _MenteeInterestFormScreenState extends State<MenteeInterestFormScreen> {
                       }),
                     ),
                     const SizedBox(height: 16),
-                    FormFieldWidgets.buildGraduationDateField(
-                      context,
-                      _formData.graduationSemester,
-                      _formData.graduationYear,
-                      (value) =>
-                          setState(() => _formData.graduationSemester = value),
-                      (value) =>
-                          setState(() => _formData.graduationYear = value),
-                    ),
-                    const SizedBox(height: 16),
                     FormFieldWidgets.buildDegreeProgramField(
                       context,
                       _formData.educationLevel,
                       _formData.degreePrograms,
-                      (value) => setState(() {
-                        _formData.degreePrograms
-                          ..clear()
-                          ..addAll(value);
-                      }),
+                      (value) async {
+                        final normalized = await _resolveOtherSelection(
+                          value,
+                          fieldLabel: 'Degree Program / Major',
+                        );
+                        if (!mounted) return;
+                        setState(() {
+                          _formData.degreePrograms
+                            ..clear()
+                            ..addAll(normalized);
+                        });
+                      },
                     ),
                     if (_formData.educationLevel == 'BS' ||
                         _formData.educationLevel == 'ABM') ...[
@@ -166,6 +174,16 @@ class _MenteeInterestFormScreenState extends State<MenteeInterestFormScreen> {
                         _formData.phdSpecializationController,
                       ),
                     ],
+                    const SizedBox(height: 16),
+                    FormFieldWidgets.buildGraduationDateField(
+                      context,
+                      _formData.graduationSemester,
+                      _formData.graduationYear,
+                      (value) =>
+                          setState(() => _formData.graduationSemester = value),
+                      (value) =>
+                          setState(() => _formData.graduationYear = value),
+                    ),
                     const SizedBox(height: 16),
                     // Experience + involvement
                     FormFieldWidgets.buildSection(
@@ -208,10 +226,17 @@ class _MenteeInterestFormScreenState extends State<MenteeInterestFormScreen> {
                       'Select all that apply',
                       FormOptions.industries,
                       _formData.industriesOfInterest,
-                      (value) => setState(() {
-                        _formData.industriesOfInterest.clear();
-                        _formData.industriesOfInterest.addAll(value);
-                      }),
+                      (value) async {
+                        final normalized = await _resolveOtherSelection(
+                          value,
+                          fieldLabel: 'Industry / Focus Area',
+                        );
+                        if (!mounted) return;
+                        setState(() {
+                          _formData.industriesOfInterest.clear();
+                          _formData.industriesOfInterest.addAll(normalized);
+                        });
+                      },
                     ),
                     const SizedBox(height: 16),
                     FormFieldWidgets.buildMultiLineTextField(
@@ -308,6 +333,62 @@ class _MenteeInterestFormScreenState extends State<MenteeInterestFormScreen> {
         ),
       ),
     );
+  }
+
+  Future<List<String>> _resolveOtherSelection(
+    List<String> rawSelection, {
+    required String fieldLabel,
+  }) async {
+    final cleaned = List<String>.from(rawSelection);
+    final hasExplicitOther = cleaned.any(
+      (value) => value.trim().toLowerCase() == 'other',
+    );
+
+    if (!hasExplicitOther) {
+      return cleaned;
+    }
+
+    cleaned.removeWhere((value) => value.trim().toLowerCase() == 'other');
+    final customValue = await _promptForOtherValue(fieldLabel);
+    if (customValue == null || customValue.isEmpty) {
+      return cleaned;
+    }
+
+    cleaned.add('Other: $customValue');
+    return cleaned;
+  }
+
+  Future<String?> _promptForOtherValue(String fieldLabel) async {
+    final controller = TextEditingController();
+    final value = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text('$fieldLabel - Other'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: 'Please specify',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.pop(dialogContext, controller.text.trim()),
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+    controller.dispose();
+    return value;
   }
 
   void _submitForm() async {

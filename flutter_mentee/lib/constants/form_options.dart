@@ -2,7 +2,6 @@ import '../services/form_data_loader.dart';
 
 /// Static option lists used by form widgets.
 class FormOptions {
-
   static final FormDataLoader _loader = FormDataLoader();
 
   // Pronouns
@@ -15,12 +14,7 @@ class FormOptions {
   ];
 
   // Education levels
-  static const List<String> educationLevels = [
-    'BS',
-    'ABM',
-    'MS',
-    'PhD',
-  ];
+  static const List<String> educationLevels = ['BS', 'ABM', 'MS', 'PhD'];
 
   // Load possible majors from files
   static List<String> get undergradPrograms => _loader.undergradPrograms;
@@ -56,6 +50,7 @@ class FormOptions {
     'Telecommunications',
     'Academia / research',
     'Startup / entrepreneurship',
+    'Other',
   ];
 
   // Help topics
@@ -70,13 +65,8 @@ class FormOptions {
     'Leadership and communication',
   ];
 
-
   // Semesters
-  static const List<String> semester = [
-    'Fall',
-    'Spring',
-    'Summer',
-  ];
+  static const List<String> semester = ['Fall', 'Spring', 'Summer'];
 
   // NCSU Organizations (loaded from file)
   static List<String> get ncsuOrgs => _loader.ncsuOrgs;

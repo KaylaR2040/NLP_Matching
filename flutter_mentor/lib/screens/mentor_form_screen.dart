@@ -34,9 +34,7 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
     final theme = Theme.of(context);
 
     if (_loading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
@@ -99,9 +97,15 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    FormFieldWidgets.buildSection(context, 'Required Mentor Information'),
+                    FormFieldWidgets.buildSection(
+                      context,
+                      'Required Mentor Information',
+                    ),
                     const SizedBox(height: 16),
-                    FormFieldWidgets.buildEmailField(context, _formData.emailController),
+                    FormFieldWidgets.buildEmailField(
+                      context,
+                      _formData.emailController,
+                    ),
                     const SizedBox(height: 6),
                     Text(
                       'This form collects emails.',
@@ -126,12 +130,7 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
                     const SizedBox(height: 16),
                     _buildDegreesSection(context),
                     const SizedBox(height: 16),
-                    FormFieldWidgets.buildTextField(
-                      context,
-                      _formData.currentCityStateController,
-                      'Current City and State',
-                      true,
-                    ),
+                    _buildCurrentLocationFields(context),
                     const SizedBox(height: 16),
                     FormFieldWidgets.buildTextField(
                       context,
@@ -148,13 +147,17 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
                     ),
                     const SizedBox(height: 32),
 
-                    FormFieldWidgets.buildSection(context, 'Mentoring and Experience'),
+                    FormFieldWidgets.buildSection(
+                      context,
+                      'Mentoring and Experience',
+                    ),
                     const SizedBox(height: 16),
                     FormFieldWidgets.buildYesNoField(
                       context,
                       'Do you have previous mentoring experience, or were you once a mentee? *',
                       _formData.previousMentorship,
-                      (value) => setState(() => _formData.previousMentorship = value),
+                      (value) =>
+                          setState(() => _formData.previousMentorship = value),
                     ),
                     const SizedBox(height: 16),
                     FormFieldWidgets.buildMultiLineTextField(
@@ -169,11 +172,18 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
                       'Select all that apply',
                       FormOptions.industryFocusAreas,
                       _formData.industryFocusAreas,
-                      (value) => setState(() {
-                        _formData.industryFocusAreas
-                          ..clear()
-                          ..addAll(value);
-                      }),
+                      (value) async {
+                        final normalized = await _resolveOtherSelection(
+                          value,
+                          fieldLabel: 'Industry / Focus Area',
+                        );
+                        if (!mounted) return;
+                        setState(() {
+                          _formData.industryFocusAreas
+                            ..clear()
+                            ..addAll(normalized);
+                        });
+                      },
                     ),
                     const SizedBox(height: 16),
                     FormFieldWidgets.buildOrganizationsField(
@@ -213,7 +223,8 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
                       null,
                       FormOptions.studentsCountOptions,
                       _formData.studentsInterested,
-                      (value) => setState(() => _formData.studentsInterested = value),
+                      (value) =>
+                          setState(() => _formData.studentsInterested = value),
                     ),
                     const SizedBox(height: 32),
 
@@ -253,6 +264,53 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
     );
   }
 
+  Widget _buildCurrentLocationFields(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          flex: 2,
+          child: FormFieldWidgets.buildTextField(
+            context,
+            _formData.currentCityController,
+            'Current City',
+            true,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Current State *',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                initialValue: _formData.currentState,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: 'State',
+                ),
+                items: FormOptions.usStates
+                    .map(
+                      (state) =>
+                          DropdownMenuItem(value: state, child: Text(state)),
+                    )
+                    .toList(),
+                onChanged: (value) =>
+                    setState(() => _formData.currentState = value),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildDegreesSection(BuildContext context) {
     final theme = Theme.of(context);
     return Column(
@@ -264,8 +322,8 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
             Text(
               'Degree(s) from NC State *',
               style: theme.textTheme.bodyLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+                fontWeight: FontWeight.w600,
+              ),
             ),
             TextButton.icon(
               onPressed: _openDegreeDialog,
@@ -289,7 +347,9 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
                   (entry) => Card(
                     margin: const EdgeInsets.only(bottom: 12),
                     child: ListTile(
-                      title: Text('${entry.value.level} in ${entry.value.program}'),
+                      title: Text(
+                        '${entry.value.level} in ${entry.value.program}',
+                      ),
                       subtitle: Text('Graduated ${entry.value.graduationYear}'),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -321,6 +381,16 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
   Future<void> _openDegreeDialog({DegreeEntry? existing, int? index}) async {
     String? selectedLevel = existing?.level;
     String? selectedProgram = existing?.program;
+    String customProgram = '';
+    if (existing != null &&
+        (existing.level == 'Other' ||
+            existing.program.toLowerCase().startsWith('other:'))) {
+      selectedProgram = 'Other';
+      customProgram = existing.program.replaceFirst(
+        RegExp(r'^other:\s*', caseSensitive: false),
+        '',
+      );
+    }
     String? selectedYear = existing?.graduationYear;
 
     DegreeEntry? result;
@@ -332,7 +402,14 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
           builder: (context, setStateDialog) {
             final programOptions = selectedLevel == null
                 ? <String>[]
-                : FormOptions.getDegreeProgramsForLevels([selectedLevel!]);
+                : List<String>.from(
+                    FormOptions.getDegreeProgramsForLevels([selectedLevel!]),
+                  );
+            if (!programOptions.any(
+              (program) => program.toLowerCase() == 'other',
+            )) {
+              programOptions.add('Other');
+            }
             if (selectedProgram != null &&
                 selectedProgram!.isNotEmpty &&
                 !programOptions.contains(selectedProgram)) {
@@ -345,7 +422,7 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   DropdownButtonFormField<String>(
-                    value: selectedLevel,
+                    initialValue: selectedLevel,
                     decoration: const InputDecoration(
                       labelText: 'Degree level',
                       border: OutlineInputBorder(),
@@ -364,37 +441,61 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
                     }),
                   ),
                   const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    value: selectedProgram,
-                    decoration: const InputDecoration(
-                      labelText: 'Degree program / major',
-                      border: OutlineInputBorder(),
+                  if (selectedLevel == 'Other') ...[
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      initialValue: customProgram,
+                      decoration: const InputDecoration(
+                        labelText: 'Please type your degree program / major',
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (value) => customProgram = value,
                     ),
-                    items: programOptions
-                        .map(
-                          (program) => DropdownMenuItem(
-                            value: program,
-                            child: Text(program),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) => setStateDialog(() {
-                      selectedProgram = value;
-                    }),
-                  ),
+                  ] else ...[
+                    DropdownButtonFormField<String>(
+                      initialValue: selectedProgram,
+                      decoration: const InputDecoration(
+                        labelText: 'Degree program / major',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: programOptions
+                          .map(
+                            (program) => DropdownMenuItem(
+                              value: program,
+                              child: Text(program),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) => setStateDialog(() {
+                        selectedProgram = value;
+                        if (value != 'Other') {
+                          customProgram = '';
+                        }
+                      }),
+                    ),
+                    if (selectedProgram == 'Other') ...[
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        initialValue: customProgram,
+                        decoration: const InputDecoration(
+                          labelText: 'Please type your degree program / major',
+                          border: OutlineInputBorder(),
+                        ),
+                        onChanged: (value) => customProgram = value,
+                      ),
+                    ],
+                  ],
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
-                    value: selectedYear,
+                    initialValue: selectedYear,
                     decoration: const InputDecoration(
                       labelText: 'Graduation year',
                       border: OutlineInputBorder(),
                     ),
                     items: FormOptions.getGraduationYears()
                         .map(
-                          (year) => DropdownMenuItem(
-                            value: year,
-                            child: Text(year),
-                          ),
+                          (year) =>
+                              DropdownMenuItem(value: year, child: Text(year)),
                         )
                         .toList(),
                     onChanged: (value) => setStateDialog(() {
@@ -410,12 +511,17 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
                 ),
                 ElevatedButton(
                   onPressed: () {
+                    final normalizedProgram =
+                        (selectedProgram == 'Other' || selectedLevel == 'Other')
+                        ? customProgram.trim()
+                        : selectedProgram;
                     if (selectedLevel != null &&
-                        selectedProgram != null &&
+                        normalizedProgram != null &&
+                        normalizedProgram.isNotEmpty &&
                         selectedYear != null) {
                       result = DegreeEntry(
                         level: selectedLevel!,
-                        program: selectedProgram!,
+                        program: normalizedProgram,
                         graduationYear: selectedYear!,
                       );
                       Navigator.pop(dialogContext);
@@ -439,6 +545,60 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
         }
       });
     }
+  }
+
+  Future<List<String>> _resolveOtherSelection(
+    List<String> rawSelection, {
+    required String fieldLabel,
+  }) async {
+    final cleaned = List<String>.from(rawSelection);
+    final hasExplicitOther = cleaned.any(
+      (value) => value.trim().toLowerCase() == 'other',
+    );
+    if (!hasExplicitOther) {
+      return cleaned;
+    }
+
+    cleaned.removeWhere((value) => value.trim().toLowerCase() == 'other');
+    final customValue = await _promptForOtherValue(fieldLabel);
+    if (customValue == null || customValue.isEmpty) {
+      return cleaned;
+    }
+    cleaned.add('Other: $customValue');
+    return cleaned;
+  }
+
+  Future<String?> _promptForOtherValue(String fieldLabel) async {
+    final controller = TextEditingController();
+    final value = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text('$fieldLabel - Other'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: 'Please specify',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.pop(dialogContext, controller.text.trim()),
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+    controller.dispose();
+    return value;
   }
 
   void _submitForm() async {

@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "nlp-project2"
+name = "nlp-project"
 version = "0.1.0"
 description = "Mentor-mentee matching pipeline with rerunnable state"
 readme = "README.md"

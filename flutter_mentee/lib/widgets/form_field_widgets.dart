@@ -90,8 +90,8 @@ class FormFieldWidgets {
   /// Pronoun chooser.
   static Widget buildPronounsField(
     BuildContext context,
-    String? selectedPronoun,
-    Function(String?) onChanged,
+    List<String> selectedPronouns,
+    Function(List<String>) onChanged,
   ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -105,12 +105,27 @@ class FormFieldWidgets {
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
+          runSpacing: 8,
           children: FormOptions.pronouns.map((pronoun) {
-            return ChoiceChip(
+            final isSelected = _containsOptionSelection(
+              selectedPronouns,
+              pronoun,
+            );
+            return FilterChip(
               label: Text(pronoun),
-              selected: selectedPronoun == pronoun,
+              selected: isSelected,
               onSelected: (selected) {
-                onChanged(selected ? pronoun : null);
+                final updated = List<String>.from(selectedPronouns);
+                if (selected) {
+                  if (!_containsOptionSelection(updated, pronoun)) {
+                    updated.add(pronoun);
+                  }
+                } else {
+                  updated.removeWhere(
+                    (value) => _optionMatchesSelection(value, pronoun),
+                  );
+                }
+                onChanged(updated);
               },
             );
           }).toList(),
@@ -148,10 +163,15 @@ class FormFieldWidgets {
           runSpacing: 8,
           children: FormOptions.educationLevels.map((level) {
             String displayLabel = level;
-            if (level == 'BS') displayLabel = 'BS (Bachelor of Science)';
-            if (level == 'MS') displayLabel = 'MS (Master of Science)';
-            if (level == 'ABM')
+            if (level == 'BS') {
+              displayLabel = 'BS (Bachelor of Science)';
+            }
+            if (level == 'MS') {
+              displayLabel = 'MS (Master of Science)';
+            }
+            if (level == 'ABM') {
               displayLabel = 'ABM (Accelerated Bachelor\'s/Master\'s)';
+            }
 
             return ChoiceChip(
               label: Text(displayLabel),
@@ -271,7 +291,12 @@ class FormFieldWidgets {
     List<String> selectedPrograms,
     Function(List<String>) onChanged,
   ) {
-    final programs = FormOptions.getDegreeProgramsForLevel(educationLevel);
+    final programs = List<String>.from(
+      FormOptions.getDegreeProgramsForLevel(educationLevel),
+    );
+    if (!programs.any((item) => item.trim().toLowerCase() == 'other')) {
+      programs.add('Other');
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -332,7 +357,10 @@ class FormFieldWidgets {
                   itemCount: programs.length,
                   itemBuilder: (context, index) {
                     final program = programs[index];
-                    final isSelected = selectedPrograms.contains(program);
+                    final isSelected = _containsOptionSelection(
+                      selectedPrograms,
+                      program,
+                    );
 
                     return CheckboxListTile(
                       dense: true,
@@ -342,11 +370,13 @@ class FormFieldWidgets {
                       onChanged: (selected) {
                         final next = List<String>.from(selectedPrograms);
                         if (selected == true) {
-                          if (!next.contains(program)) {
+                          if (!_containsOptionSelection(next, program)) {
                             next.add(program);
                           }
                         } else {
-                          next.remove(program);
+                          next.removeWhere(
+                            (value) => _optionMatchesSelection(value, program),
+                          );
                         }
                         onChanged(next);
                       },
@@ -485,16 +515,23 @@ class FormFieldWidgets {
           spacing: 8,
           runSpacing: 8,
           children: options.map((option) {
-            final isSelected = selectedOptions.contains(option);
+            final isSelected = _containsOptionSelection(
+              selectedOptions,
+              option,
+            );
             return FilterChip(
               label: Text(option),
               selected: isSelected,
               onSelected: (selected) {
                 final newSelection = List<String>.from(selectedOptions);
                 if (selected) {
-                  newSelection.add(option);
+                  if (!_containsOptionSelection(newSelection, option)) {
+                    newSelection.add(option);
+                  }
                 } else {
-                  newSelection.remove(option);
+                  newSelection.removeWhere(
+                    (value) => _optionMatchesSelection(value, option),
+                  );
                 }
                 onChanged(newSelection);
               },
@@ -931,7 +968,7 @@ class FormFieldWidgets {
           .toList();
     }
 
-    return results.map((r) => r.choice as String).take(limit).toList();
+    return results.map((r) => r.choice).take(limit).toList();
   }
 
   /// Build multi-line text field
@@ -1041,5 +1078,20 @@ class FormFieldWidgets {
         ),
       ],
     );
+  }
+
+  static bool _containsOptionSelection(List<String> selected, String option) {
+    return selected.any((value) => _optionMatchesSelection(value, option));
+  }
+
+  static bool _optionMatchesSelection(String selectedValue, String option) {
+    final selectedNormalized = selectedValue.trim().toLowerCase();
+    final optionNormalized = option.trim().toLowerCase();
+
+    if (optionNormalized == 'other') {
+      return selectedNormalized == 'other' ||
+          selectedNormalized.startsWith('other:');
+    }
+    return selectedValue == option;
   }
 }

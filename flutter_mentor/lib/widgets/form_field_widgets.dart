@@ -9,17 +9,14 @@ class FormFieldWidgets {
       padding: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(
-            color: Theme.of(context).dividerColor,
-            width: 2,
-          ),
+          bottom: BorderSide(color: Theme.of(context).dividerColor, width: 2),
         ),
       ),
       child: Text(
         title,
-        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
+        style: Theme.of(
+          context,
+        ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
       ),
     );
   }
@@ -36,9 +33,9 @@ class FormFieldWidgets {
       children: [
         Text(
           '$label${required ? ' *' : ''}',
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
         TextField(
@@ -62,9 +59,9 @@ class FormFieldWidgets {
       children: [
         Text(
           'Email address *',
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
         TextField(
@@ -91,9 +88,9 @@ class FormFieldWidgets {
       children: [
         Text(
           'Pronouns *',
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
         Wrap(
@@ -123,9 +120,9 @@ class FormFieldWidgets {
       children: [
         Text(
           'Education level *',
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
         Wrap(
@@ -156,16 +153,16 @@ class FormFieldWidgets {
       children: [
         Text(
           'Graduation date',
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
         Row(
           children: [
             Expanded(
               child: DropdownButtonFormField<String>(
-                value: semester,
+                initialValue: semester,
                 decoration: const InputDecoration(
                   border: OutlineInputBorder(),
                   hintText: 'Semester',
@@ -179,7 +176,7 @@ class FormFieldWidgets {
             const SizedBox(width: 16),
             Expanded(
               child: DropdownButtonFormField<String>(
-                value: year,
+                initialValue: year,
                 decoration: const InputDecoration(
                   border: OutlineInputBorder(),
                   hintText: 'Year',
@@ -245,9 +242,9 @@ class FormFieldWidgets {
       children: [
         Text(
           label,
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
         Row(
@@ -283,9 +280,9 @@ class FormFieldWidgets {
       children: [
         Text(
           label,
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
         ),
         if (subtitle != null) ...[
           const SizedBox(height: 4),
@@ -321,9 +318,9 @@ class FormFieldWidgets {
       children: [
         Text(
           label,
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
         ),
         if (subtitle != null) ...[
           const SizedBox(height: 4),
@@ -334,16 +331,20 @@ class FormFieldWidgets {
           spacing: 8,
           runSpacing: 8,
           children: options.map((opt) {
-            final isSelected = selected.contains(opt);
+            final isSelected = _containsOptionSelection(selected, opt);
             return FilterChip(
               label: Text(opt),
               selected: isSelected,
               onSelected: (_) {
                 final updated = List<String>.from(selected);
                 if (isSelected) {
-                  updated.remove(opt);
+                  updated.removeWhere(
+                    (value) => _optionMatchesSelection(value, opt),
+                  );
                 } else {
-                  updated.add(opt);
+                  if (!_containsOptionSelection(updated, opt)) {
+                    updated.add(opt);
+                  }
                 }
                 onChanged(updated);
               },
@@ -365,9 +366,9 @@ class FormFieldWidgets {
       children: [
         Text(
           label,
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
         TextField(
@@ -393,9 +394,9 @@ class FormFieldWidgets {
       children: [
         Text(
           'Maximum number of mentees you can take *',
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
         Row(
@@ -410,10 +411,7 @@ class FormFieldWidgets {
                 onChanged: (v) => onChanged(v.round()),
               ),
             ),
-            Text(
-              '$value',
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
+            Text('$value', style: Theme.of(context).textTheme.headlineSmall),
           ],
         ),
       ],
@@ -435,9 +433,9 @@ class FormFieldWidgets {
       children: [
         Text(
           label,
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
         // Show selected items as chips
@@ -515,17 +513,31 @@ class FormFieldWidgets {
                         itemCount: filtered.length,
                         itemBuilder: (context, index) {
                           final item = filtered[index];
-                          final checked = tempSelected.contains(item);
+                          final checked = _containsOptionSelection(
+                            tempSelected,
+                            item,
+                          );
                           return CheckboxListTile(
-                            title: Text(item, style: const TextStyle(fontSize: 14)),
+                            title: Text(
+                              item,
+                              style: const TextStyle(fontSize: 14),
+                            ),
                             value: checked,
                             dense: true,
                             onChanged: (_) {
                               setDialogState(() {
                                 if (checked) {
-                                  tempSelected.remove(item);
+                                  tempSelected.removeWhere(
+                                    (value) =>
+                                        _optionMatchesSelection(value, item),
+                                  );
                                 } else {
-                                  tempSelected.add(item);
+                                  if (!_containsOptionSelection(
+                                    tempSelected,
+                                    item,
+                                  )) {
+                                    tempSelected.add(item);
+                                  }
                                 }
                               });
                             },
@@ -554,5 +566,19 @@ class FormFieldWidgets {
         );
       },
     );
+  }
+
+  static bool _containsOptionSelection(List<String> selected, String option) {
+    return selected.any((value) => _optionMatchesSelection(value, option));
+  }
+
+  static bool _optionMatchesSelection(String selectedValue, String option) {
+    final selectedNormalized = selectedValue.trim().toLowerCase();
+    final optionNormalized = option.trim().toLowerCase();
+    if (optionNormalized == 'other') {
+      return selectedNormalized == 'other' ||
+          selectedNormalized.startsWith('other:');
+    }
+    return selectedValue == option;
   }
 }
