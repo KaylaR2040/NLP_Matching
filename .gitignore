@@ -23,5 +23,8 @@ build/
 # VERCEL
 .vercel/
 
+# USER DATA
+data/
+
 # OTHER
 .idea/
