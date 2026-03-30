@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "excluded_mentee_ids": [],
+  "excluded_mentor_ids": [],
+  "rejected_pairs": [],
+  "locked_pairs": [],
+  "global_weights": {},
+  "mentee_weight_overrides": {},
+  "run_count": 2
+}
