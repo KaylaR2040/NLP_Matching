@@ -16,6 +16,7 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
   final _formKey = GlobalKey<FormState>();
   late final MentorFormData _formData;
   bool _loading = true;
+  bool _submitted = false;
 
   @override
   void initState() {
@@ -32,6 +33,12 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+
+    if (_submitted) {
+      return const Scaffold(
+        body: ColoredBox(color: Colors.white, child: SizedBox.expand()),
+      );
+    }
 
     if (_loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -619,6 +626,14 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
   }
 
   void _submitForm() async {
+    final confirmed = await _confirmSubmit();
+    if (!mounted) {
+      return;
+    }
+    if (!confirmed) {
+      return;
+    }
+
     final errors = _formData.validate();
 
     if (errors.isNotEmpty) {
@@ -663,21 +678,7 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
 
     if (result['success'] == true) {
       if (mounted) {
-        showDialog(
-          context: context,
-          builder: (_) => AlertDialog(
-            title: const Text('Success'),
-            content: const Text(
-              'Your ECE mentor form has been submitted successfully.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('OK'),
-              ),
-            ],
-          ),
-        );
+        setState(() => _submitted = true);
       }
     } else {
       if (mounted) {
@@ -699,6 +700,27 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
         );
       }
     }
+  }
+
+  Future<bool> _confirmSubmit() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm Submission'),
+        content: const Text('Are you sure you are ready to submit?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('No'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Yes'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
   }
 
   @override

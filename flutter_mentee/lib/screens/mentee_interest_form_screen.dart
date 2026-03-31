@@ -392,6 +392,14 @@ class _MenteeInterestFormScreenState extends State<MenteeInterestFormScreen> {
   }
 
   void _submitForm() async {
+    final confirmed = await _confirmSubmit();
+    if (!mounted) {
+      return;
+    }
+    if (!confirmed) {
+      return;
+    }
+
     final errors = _formData.validate();
 
     if (errors.isNotEmpty) {
@@ -479,6 +487,27 @@ class _MenteeInterestFormScreenState extends State<MenteeInterestFormScreen> {
         );
       }
     }
+  }
+
+  Future<bool> _confirmSubmit() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm Submission'),
+        content: const Text('Are you sure you are ready to submit?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('No'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Yes'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
   }
 
   @override
