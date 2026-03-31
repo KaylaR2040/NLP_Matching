@@ -85,22 +85,28 @@ function buildPayload(config, submissionData) {
   const fieldMap = config.fieldMap || {};
   const entries = Object.entries(fieldMap);
   if (entries.length > 0) {
-    const mappedPayload = {};
+    const mappedPayload = new URLSearchParams();
     for (const [sourcePath, entryId] of entries) {
       const resolved = resolvePath(submissionData, sourcePath);
       if (resolved !== undefined) {
-        mappedPayload[entryId] = stringifyValue(resolved);
+        if (Array.isArray(resolved)) {
+          for (const item of resolved) {
+            mappedPayload.append(entryId, stringifyValue(item));
+          }
+        } else {
+          mappedPayload.append(entryId, stringifyValue(resolved));
+        }
       }
     }
-    if (Object.keys(mappedPayload).length > 0) {
+    if ([...mappedPayload.keys()].length > 0) {
       return mappedPayload;
     }
   }
 
   if (config.jsonEntryId) {
-    return {
-      [config.jsonEntryId]: JSON.stringify(submissionData, null, 2),
-    };
+    const mappedPayload = new URLSearchParams();
+    mappedPayload.append(config.jsonEntryId, JSON.stringify(submissionData, null, 2));
+    return mappedPayload;
   }
 
   throw new Error("Google Form entry configuration is missing");
@@ -121,7 +127,7 @@ async function submitToGoogleForm(config, submissionData) {
   }
 
   const payload = buildPayload(config, submissionData);
-  const encoded = new URLSearchParams(payload).toString();
+  const encoded = payload.toString();
 
   try {
     const response = await fetch(responseUrl, {
@@ -134,7 +140,8 @@ async function submitToGoogleForm(config, submissionData) {
 
     const ok = response.status < 400;
     if (!ok && required) {
-      throw new Error(describeGoogleFormHttpError(response.status));
+      const responseText = (await response.text()).slice(0, 500);
+      throw new Error(`${describeGoogleFormHttpError(response.status)}. Response snippet: ${responseText}`);
     }
 
     return {

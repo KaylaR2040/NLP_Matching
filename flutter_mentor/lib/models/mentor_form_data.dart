@@ -130,6 +130,12 @@ class MentorFormData {
     if (industryFocusAreas.isEmpty) {
       errors.add('Select at least one industry/focus area');
     }
+    if (previousInvolvementController.text.trim().isEmpty) {
+      errors.add('Previous involvement is required');
+    }
+    if (previousInvolvementOrgs.isEmpty) {
+      errors.add('Previous involvement organizations are required');
+    }
     if (whyInterestedController.text.trim().isEmpty) {
       errors.add('Why you are interested is required');
     }
