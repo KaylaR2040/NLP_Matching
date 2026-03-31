@@ -59,7 +59,7 @@ function stringifyValue(value) {
     return "";
   }
   if (typeof value === "boolean") {
-    return value ? "YES" : "NO";
+    return value ? "yes" : "no";
   }
   if (Array.isArray(value)) {
     return value.map(stringifyValue).join(", ");
@@ -112,6 +112,20 @@ function buildPayload(config, submissionData) {
   throw new Error("Google Form entry configuration is missing");
 }
 
+function findEmptyRequiredEntries(config, payload) {
+  const fieldMap = config.fieldMap || {};
+  const missing = [];
+
+  for (const entryId of Object.values(fieldMap)) {
+    const allValues = payload.getAll(entryId);
+    if (!allValues.length || allValues.every((v) => !String(v).trim())) {
+      missing.push(entryId);
+    }
+  }
+
+  return missing;
+}
+
 async function submitToGoogleForm(config, submissionData) {
   const enabled = parseBool(config.enabled, false);
   const required = parseBool(config.required, false);
@@ -141,7 +155,13 @@ async function submitToGoogleForm(config, submissionData) {
     const ok = response.status < 400;
     if (!ok && required) {
       const responseText = (await response.text()).slice(0, 500);
-      throw new Error(`${describeGoogleFormHttpError(response.status)}. Response snippet: ${responseText}`);
+      const missingEntries = findEmptyRequiredEntries(config, payload);
+      const missingInfo = missingEntries.length
+        ? ` Empty mapped entries: ${missingEntries.join(", ")}.`
+        : "";
+      throw new Error(
+        `${describeGoogleFormHttpError(response.status)}.${missingInfo} Response snippet: ${responseText}`,
+      );
     }
 
     return {

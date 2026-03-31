@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../constants/form_options.dart';
+import '../services/organization_search_service.dart';
 
 /// Reusable UI builders for the mentor interest form.
 class FormFieldWidgets {
@@ -252,13 +253,160 @@ class FormFieldWidgets {
     List<String> selected,
     Function(List<String>) onChanged,
   ) {
-    return _buildSearchableMultiSelect(
-      context,
-      'Student organizations you are/were involved with',
-      'Search organizations...',
-      FormOptions.ncsuOrgs,
-      selected,
-      onChanged,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Student organizations you are/were involved with *',
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Select all that apply',
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            border: Border.all(color: Theme.of(context).dividerColor),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Selected: ${selected.length} organization(s)',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: () => _showOrgsDialog(context, selected, onChanged),
+                icon: const Icon(Icons.search),
+                label: const Text('Search and select organizations'),
+              ),
+              if (selected.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: selected.map((org) {
+                    return Chip(
+                      label: Text(org),
+                      onDeleted: () {
+                        final newList = List<String>.from(selected);
+                        newList.remove(org);
+                        onChanged(newList);
+                      },
+                    );
+                  }).toList(),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  static void _showOrgsDialog(
+    BuildContext context,
+    List<String> currentSelection,
+    Function(List<String>) onChanged,
+  ) {
+    final searchService = OrganizationSearchService.shared;
+    showDialog(
+      context: context,
+      builder: (context) {
+        List<String> tempSelected = List.from(currentSelection);
+        String searchQuery = '';
+        List<String> results = FormOptions.ncsuOrgs;
+        bool loading = false;
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final filteredOrgs = results;
+
+            return AlertDialog(
+              title: const Text('Select Organizations'),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      decoration: const InputDecoration(
+                        hintText: 'Search organizations...',
+                        prefixIcon: Icon(Icons.search),
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (value) {
+                        searchQuery = value;
+                        setDialogState(() => loading = true);
+                        searchService
+                            .search(searchQuery, FormOptions.ncsuOrgs)
+                            .then((merged) {
+                              if (!context.mounted) return;
+                              setDialogState(() {
+                                results = merged;
+                                loading = false;
+                              });
+                            });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    if (loading) const LinearProgressIndicator(),
+                    if (loading) const SizedBox(height: 8),
+                    Expanded(
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: filteredOrgs.length,
+                        itemBuilder: (context, index) {
+                          final org = filteredOrgs[index];
+                          final isSelected = tempSelected.contains(org);
+
+                          return CheckboxListTile(
+                            title: Text(org),
+                            value: isSelected,
+                            onChanged: (selected) {
+                              setDialogState(() {
+                                if (selected == true) {
+                                  tempSelected.add(org);
+                                } else {
+                                  tempSelected.remove(org);
+                                }
+                              });
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    onChanged(tempSelected);
+                    Navigator.pop(context);
+                  },
+                  child: const Text('Done'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
