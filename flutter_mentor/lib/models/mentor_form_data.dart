@@ -133,10 +133,11 @@ class MentorFormData {
     if (industryFocusAreas.isEmpty) {
       errors.add('Select at least one industry/focus area');
     }
-    if (previousInvolvementController.text.trim().isEmpty) {
+    if (previousMentorship == true &&
+        previousInvolvementController.text.trim().isEmpty) {
       errors.add('Previous involvement is required');
     }
-    if (previousInvolvementOrgs.isEmpty) {
+    if (previousMentorship == true && previousInvolvementOrgs.isEmpty) {
       errors.add('Previous involvement organizations are required');
     }
     if (whyInterestedController.text.trim().isEmpty) {
@@ -156,6 +157,8 @@ class MentorFormData {
   }
 
   Map<String, dynamic> toJson() {
+    final hasPreviousInvolvement = previousMentorship == true;
+
     return {
       'email': emailController.text.trim(),
       'linkedin': linkedinController.text.trim(),
@@ -174,8 +177,13 @@ class MentorFormData {
       'currentCompany': currentCompanyController.text.trim(),
       'previousMentorship': previousMentorship,
       'industryFocusArea': industryFocusAreas,
-      'previousInvolvement': previousInvolvementController.text.trim(),
-      'previousInvolvementOrgs': previousInvolvementOrgs,
+      // Keep required Google Form fields populated even when mentorship is "No".
+      'previousInvolvement': hasPreviousInvolvement
+          ? previousInvolvementController.text.trim()
+          : 'N/A',
+      'previousInvolvementOrgs': hasPreviousInvolvement
+          ? previousInvolvementOrgs
+          : ['N/A'],
       'whyInterested': whyInterestedController.text.trim(),
       'professionalExperience': professionalExperienceController.text.trim(),
       'aboutYourself': aboutYourselfController.text.trim(),

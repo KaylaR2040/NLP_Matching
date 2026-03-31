@@ -29,7 +29,7 @@ class FormDataLoader {
   /// Load NCSU organizations from text file
   Future<List<String>> loadNcsuOrgs() async {
     if (_ncsuOrgs != null) return _ncsuOrgs!;
-    
+
     try {
       final data = await rootBundle.loadString('assets/data/ncsu_orgs.txt');
       _ncsuOrgs = data
@@ -37,6 +37,7 @@ class FormDataLoader {
           .map((line) => line.trim())
           .where((line) => line.isNotEmpty)
           .toList();
+      _ncsuOrgs!.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
       print('Loaded ${_ncsuOrgs!.length} NCSU organizations');
       return _ncsuOrgs!;
     } catch (e) {
@@ -49,14 +50,19 @@ class FormDataLoader {
   /// Load undergraduate programs from text file
   Future<List<String>> loadUndergradPrograms() async {
     if (_undergradPrograms != null) return _undergradPrograms!;
-    
+
     try {
-      final data = await rootBundle.loadString('assets/data/undergrad_programs.txt');
+      final data = await rootBundle.loadString(
+        'assets/data/undergrad_programs.txt',
+      );
       _undergradPrograms = data
           .split('\n')
           .map((line) => line.trim())
           .where((line) => line.isNotEmpty)
           .toList();
+      _undergradPrograms!.sort(
+        (a, b) => a.toLowerCase().compareTo(b.toLowerCase()),
+      );
       print('Loaded ${_undergradPrograms!.length} undergraduate programs');
       return _undergradPrograms!;
     } catch (e) {
@@ -69,7 +75,7 @@ class FormDataLoader {
   /// Load graduate programs from text file
   Future<List<String>> loadGradPrograms() async {
     if (_gradPrograms != null) return _gradPrograms!;
-    
+
     try {
       final data = await rootBundle.loadString('assets/data/grad_programs.txt');
       _gradPrograms = data
@@ -77,11 +83,15 @@ class FormDataLoader {
           .map((line) => line.trim())
           .where((line) => line.isNotEmpty)
           .toList();
+      _gradPrograms!.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
       print('Loaded ${_gradPrograms!.length} graduate programs');
       return _gradPrograms!;
     } catch (e) {
       print('Error loading grad programs: $e');
-      _gradPrograms = ['Computer Engineering - MS', 'Electrical Engineering - MS'];
+      _gradPrograms = [
+        'Computer Engineering - MS',
+        'Electrical Engineering - MS',
+      ];
       return _gradPrograms!;
     }
   }
@@ -90,12 +100,17 @@ class FormDataLoader {
   Future<List<String>> loadConcentrations() async {
     if (_concentrations != null) return _concentrations!;
     try {
-      final data = await rootBundle.loadString('assets/data/concentrations.txt');
+      final data = await rootBundle.loadString(
+        'assets/data/concentrations.txt',
+      );
       _concentrations = data
           .split('\n')
           .map((line) => line.trim())
           .where((line) => line.isNotEmpty)
           .toList();
+      _concentrations!.sort(
+        (a, b) => a.toLowerCase().compareTo(b.toLowerCase()),
+      );
       print('Loaded ${_concentrations!.length} concentrations');
       return _concentrations!;
     } catch (e) {
@@ -104,10 +119,11 @@ class FormDataLoader {
       return _concentrations!;
     }
   }
+
   /// Load ABM programs from text file
   Future<List<String>> loadAbmPrograms() async {
     if (_abmPrograms != null) return _abmPrograms!;
-    
+
     try {
       final data = await rootBundle.loadString('assets/data/abm_programs.txt');
       _abmPrograms = data
@@ -115,11 +131,15 @@ class FormDataLoader {
           .map((line) => line.trim())
           .where((line) => line.isNotEmpty)
           .toList();
+      _abmPrograms!.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
       print('Loaded ${_abmPrograms!.length} ABM programs');
       return _abmPrograms!;
     } catch (e) {
       print('Error loading ABM programs: $e');
-      _abmPrograms = ['Computer Engineering - ABM', 'Electrical Engineering - ABM'];
+      _abmPrograms = [
+        'Computer Engineering - ABM',
+        'Electrical Engineering - ABM',
+      ];
       return _abmPrograms!;
     }
   }
@@ -127,7 +147,7 @@ class FormDataLoader {
   /// Load PhD programs from text file
   Future<List<String>> loadPhdPrograms() async {
     if (_phdPrograms != null) return _phdPrograms!;
-    
+
     try {
       final data = await rootBundle.loadString('assets/data/phd_programs.txt');
       _phdPrograms = data
@@ -135,11 +155,15 @@ class FormDataLoader {
           .map((line) => line.trim())
           .where((line) => line.isNotEmpty)
           .toList();
+      _phdPrograms!.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
       print('Loaded ${_phdPrograms!.length} PhD programs');
       return _phdPrograms!;
     } catch (e) {
       print('Error loading PhD programs: $e');
-      _phdPrograms = ['Computer Engineering - PhD', 'Electrical Engineering - PhD'];
+      _phdPrograms = [
+        'Computer Engineering - PhD',
+        'Electrical Engineering - PhD',
+      ];
       return _phdPrograms!;
     }
   }
@@ -152,7 +176,7 @@ class FormDataLoader {
   List<String> get phdPrograms => _phdPrograms ?? [];
   List<String> get concentrations => _concentrations ?? [];
 
-    /// True once all required files are loaded or defaulted.
+  /// True once all required files are loaded or defaulted.
   bool get isLoaded =>
       _ncsuOrgs != null &&
       _undergradPrograms != null &&

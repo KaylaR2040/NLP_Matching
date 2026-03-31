@@ -31,11 +31,13 @@ class FormDataLoader {
   Future<List<String>> _loadFile(String path) async {
     try {
       final data = await rootBundle.loadString(path);
-      return data
+      final values = data
           .split('\n')
           .map((line) => line.trim())
           .where((line) => line.isNotEmpty)
           .toList();
+      values.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+      return values;
     } catch (e) {
       print('Error loading $path: $e');
       return [];
@@ -48,7 +50,9 @@ class FormDataLoader {
   }
 
   Future<List<String>> loadUndergradPrograms() async {
-    _undergradPrograms ??= await _loadFile('assets/data/undergrad_programs.txt');
+    _undergradPrograms ??= await _loadFile(
+      'assets/data/undergrad_programs.txt',
+    );
     return _undergradPrograms!;
   }
 

@@ -6,71 +6,71 @@ class FormOptions {
 
   // Pronouns
   static const List<String> pronouns = [
-    'She/her',
     'He/him',
-    'They/them',
-    'Prefer not to say',
     "Other",
+    'Prefer not to say',
+    'She/her',
+    'They/them',
   ];
 
   // Education levels
-  static const List<String> educationLevels = ['BS', 'ABM', 'MS', 'PhD'];
+  static const List<String> educationLevels = ['ABM', 'BS', 'MS', 'PhD'];
 
   // Load possible majors from files
   static List<String> get undergradPrograms => _loader.undergradPrograms;
   static List<String> get gradPrograms => _loader.gradPrograms;
   static List<String> get abmPrograms => _loader.abmPrograms;
   static List<String> get phdPrograms => _loader.phdPrograms;
-  static List<String> get concentrations => _loader.concentrations;
+  static List<String> get concentrations => _sorted(_loader.concentrations);
 
   // Experience levels
   static const List<String> experienceLevels = [
-    'No internships yet',
     'Completed 1 internship',
     'Completed 2+ internships',
     'Co-op experience',
+    'No internships yet',
     'Research experience',
   ];
 
   // Industries
   static const List<String> industries = [
-    "ASIC Design & Verification",
-    'Embedded systems',
-    'Software engineering',
-    'Hardware / electronics',
-    'Robotics / autonomy',
+    'Academia / research',
     'Artificial intelligence / machine learning',
-    'Data science / analytics',
-    'Cybersecurity',
+    "ASIC Design & Verification",
     'Consulting',
+    'Cybersecurity',
+    'Data science / analytics',
+    'Embedded systems',
+    'Energy / utilities',
     'Finance / fintech',
     'Government / defense',
-    'Energy / utilities',
-    'Manufacturing',
+    'Hardware / electronics',
     'Healthcare / medical devices',
-    'Telecommunications',
-    'Academia / research',
-    'Startup / entrepreneurship',
+    'Manufacturing',
     'Other',
+    'Robotics / autonomy',
+    'Software engineering',
+    'Startup / entrepreneurship',
+    'Telecommunications',
   ];
 
   // Help topics
   static const List<String> helpTopics = [
-    'Resume and interview preparation',
-    'Internship search',
-    'Technical skill development',
-    'Networking',
     'Career planning',
     'Graduate school advice',
-    'Work–life balance',
+    'Internship search',
     'Leadership and communication',
+    'Networking',
+    'Resume and interview preparation',
+    'Technical skill development',
+    'Work–life balance',
   ];
 
   // Semesters
   static const List<String> semester = ['Fall', 'Spring', 'Summer'];
 
   // NCSU Organizations (loaded from file)
-  static List<String> get ncsuOrgs => _loader.ncsuOrgs;
+  static List<String> get ncsuOrgs => _sorted(_loader.ncsuOrgs);
 
   /// Get years for graduation dropdown (current year + 12 years)
   static List<String> getGraduationYears() {
@@ -81,16 +81,16 @@ class FormOptions {
   /// Returns the degree-program list for the selected education level.
   static List<String> getDegreeProgramsForLevel(String? educationLevel) {
     if (educationLevel == 'BS') {
-      return undergradPrograms;
+      return _sorted(undergradPrograms);
     }
     if (educationLevel == 'ABM') {
-      return abmPrograms;
+      return _sorted(abmPrograms);
     }
     if (educationLevel == 'MS') {
-      return gradPrograms;
+      return _sorted(gradPrograms);
     }
     if (educationLevel == 'PhD') {
-      return phdPrograms;
+      return _sorted(phdPrograms);
     }
     return [];
   }
@@ -109,5 +109,11 @@ class FormOptions {
       default:
         return '';
     }
+  }
+
+  static List<String> _sorted(List<String> values) {
+    final sorted = List<String>.from(values);
+    sorted.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return sorted;
   }
 }

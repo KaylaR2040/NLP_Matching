@@ -5,27 +5,27 @@ class FormOptions {
   static final FormDataLoader _loader = FormDataLoader();
 
   static const List<String> pronouns = [
-    'She/her',
     'He/him',
-    'They/them',
-    'Prefer not to say',
     'Other',
+    'Prefer not to say',
+    'She/her',
+    'They/them',
   ];
 
   static const List<String> educationLevels = [
-    'BS',
     'ABM',
+    'Alumni',
+    'BS',
     'MS',
     'PhD',
-    'Alumni',
   ];
 
   static const List<String> degreeLevels = [
-    'Undergraduate',
     'ABM',
     'MS',
-    'PhD',
     'Other',
+    'PhD',
+    'Undergraduate',
   ];
 
   static List<String> get undergradPrograms => _loader.undergradPrograms;
@@ -34,16 +34,16 @@ class FormOptions {
   static List<String> get phdPrograms => _loader.phdPrograms;
 
   static const List<String> industryFocusAreas = [
-    'Embedded systems',
-    'Software engineering',
-    'Hardware / electronics',
-    'Robotics / autonomy',
     'Artificial intelligence / machine learning',
-    'Data science / analytics',
-    'Cybersecurity',
-    'Power / energy systems',
     'Communications / signal processing',
+    'Cybersecurity',
+    'Data science / analytics',
+    'Embedded systems',
+    'Hardware / electronics',
     'Other',
+    'Power / energy systems',
+    'Robotics / autonomy',
+    'Software engineering',
   ];
 
   static const List<String> studentsCountOptions = ['1 student', '2 students'];
@@ -53,11 +53,12 @@ class FormOptions {
   static const List<String> usStates = [
     'AL',
     'AK',
-    'AZ',
     'AR',
+    'AZ',
     'CA',
     'CO',
     'CT',
+    'DC',
     'DE',
     'FL',
     'GA',
@@ -82,9 +83,9 @@ class FormOptions {
     'NH',
     'NJ',
     'NM',
-    'NY',
     'NC',
     'ND',
+    'NY',
     'OH',
     'OK',
     'OR',
@@ -101,10 +102,9 @@ class FormOptions {
     'WV',
     'WI',
     'WY',
-    'DC',
   ];
 
-  static List<String> get ncsuOrgs => _loader.ncsuOrgs;
+  static List<String> get ncsuOrgs => _sorted(_loader.ncsuOrgs);
 
   static List<String> getGraduationYears() {
     final currentYear = DateTime.now().year;
@@ -125,8 +125,12 @@ class FormOptions {
     if (levels.contains('PhD')) {
       programs.addAll(phdPrograms);
     }
-    final result = programs.toList();
-    result.sort();
-    return result;
+    return _sorted(programs.toList());
+  }
+
+  static List<String> _sorted(List<String> values) {
+    final sorted = List<String>.from(values);
+    sorted.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return sorted;
   }
 }
