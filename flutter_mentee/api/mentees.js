@@ -55,6 +55,7 @@ module.exports = async (req, res) => {
     submittedAt,
     submitted_at: submittedAt,
   };
+  menteeRecord.jsonData = JSON.stringify(menteeRecord, null, 2);
 
   try {
     const config = buildGoogleFormConfig({

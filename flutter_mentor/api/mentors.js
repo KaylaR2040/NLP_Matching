@@ -75,6 +75,7 @@ module.exports = async (req, res) => {
     submitted_at: submittedAt,
     degreesSummary,
   };
+  mentorRecord.jsonData = JSON.stringify(mentorRecord, null, 2);
 
   try {
     const config = buildGoogleFormConfig({

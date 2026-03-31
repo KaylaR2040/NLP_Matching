@@ -120,6 +120,23 @@ class FormFieldWidgets {
             );
           }).toList(),
         ),
+        if (selectedPronouns.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: selectedPronouns.map((value) {
+              return Chip(
+                label: Text(value),
+                onDeleted: () {
+                  final updated = List<String>.from(selectedPronouns)
+                    ..remove(value);
+                  onChanged(updated);
+                },
+              );
+            }).toList(),
+          ),
+        ],
       ],
     );
   }
@@ -366,6 +383,22 @@ class FormFieldWidgets {
             );
           }).toList(),
         ),
+        if (selected.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: selected.map((value) {
+              return Chip(
+                label: Text(value),
+                onDeleted: () {
+                  final updated = List<String>.from(selected)..remove(value);
+                  onChanged(updated);
+                },
+              );
+            }).toList(),
+          ),
+        ],
       ],
     );
   }
