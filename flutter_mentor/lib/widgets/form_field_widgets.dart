@@ -121,20 +121,13 @@ class FormFieldWidgets {
             );
           }).toList(),
         ),
-        if (selectedPronouns.isNotEmpty) ...[
+        if (_otherSelections(selectedPronouns).isNotEmpty) ...[
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: selectedPronouns.map((value) {
-              return Chip(
-                label: Text(value),
-                onDeleted: () {
-                  final updated = List<String>.from(selectedPronouns)
-                    ..remove(value);
-                  onChanged(updated);
-                },
-              );
+            children: _otherSelections(selectedPronouns).map((value) {
+              return Chip(label: Text(value));
             }).toList(),
           ),
         ],
@@ -531,19 +524,13 @@ class FormFieldWidgets {
             );
           }).toList(),
         ),
-        if (selected.isNotEmpty) ...[
+        if (_otherSelections(selected).isNotEmpty) ...[
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: selected.map((value) {
-              return Chip(
-                label: Text(value),
-                onDeleted: () {
-                  final updated = List<String>.from(selected)..remove(value);
-                  onChanged(updated);
-                },
-              );
+            children: _otherSelections(selected).map((value) {
+              return Chip(label: Text(value));
             }).toList(),
           ),
         ],
@@ -776,5 +763,11 @@ class FormFieldWidgets {
           selectedNormalized.startsWith('other:');
     }
     return selectedValue == option;
+  }
+
+  static List<String> _otherSelections(List<String> selected) {
+    return selected
+        .where((value) => value.trim().toLowerCase().startsWith('other:'))
+        .toList();
   }
 }
