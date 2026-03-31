@@ -95,6 +95,9 @@ class MentorFormData {
     if (pronouns.isEmpty) {
       errors.add('At least one pronoun selection is required');
     }
+    if (linkedinController.text.trim().isEmpty) {
+      errors.add('LinkedIn is required');
+    }
     if (firstNameController.text.trim().isEmpty) {
       errors.add('First name is required');
     }

@@ -284,7 +284,7 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
       context,
       _formData.linkedinController,
       'LinkedIn profile URL',
-      false,
+      true,
     );
   }
 
