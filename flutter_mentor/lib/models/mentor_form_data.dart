@@ -137,9 +137,6 @@ class MentorFormData {
         previousInvolvementController.text.trim().isEmpty) {
       errors.add('Previous involvement is required');
     }
-    if (previousMentorship == true && previousInvolvementOrgs.isEmpty) {
-      errors.add('Previous involvement organizations are required');
-    }
     if (whyInterestedController.text.trim().isEmpty) {
       errors.add('Why you are interested is required');
     }

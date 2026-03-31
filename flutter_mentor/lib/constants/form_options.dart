@@ -22,10 +22,10 @@ class FormOptions {
 
   static const List<String> degreeLevels = [
     'ABM',
+    'B.S.',
     'MS',
     'Other',
     'PhD',
-    'Undergraduate',
   ];
 
   static List<String> get undergradPrograms => _loader.undergradPrograms;
@@ -113,7 +113,7 @@ class FormOptions {
 
   static List<String> getDegreeProgramsForLevels(List<String> levels) {
     final programs = <String>{};
-    if (levels.contains('Undergraduate')) {
+    if (levels.contains('B.S.')) {
       programs.addAll(undergradPrograms);
     }
     if (levels.contains('ABM')) {

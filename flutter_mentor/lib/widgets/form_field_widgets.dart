@@ -257,7 +257,7 @@ class FormFieldWidgets {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Student organizations you are/were involved with *',
+          'Student organizations you are/were involved with',
           style: Theme.of(
             context,
           ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
