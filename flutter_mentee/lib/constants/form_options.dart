@@ -34,6 +34,7 @@ class FormOptions {
 
   // Industries
   static const List<String> industries = [
+    "ASIC Design & Verification",
     'Embedded systems',
     'Software engineering',
     'Hardware / electronics',
