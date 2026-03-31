@@ -24,6 +24,7 @@ class MentorFormData {
   final TextEditingController firstNameController;
   final TextEditingController lastNameController;
   final TextEditingController linkedinController;
+  final List<String> pronouns;
 
   final List<DegreeEntry> degrees;
 
@@ -48,6 +49,7 @@ class MentorFormData {
     TextEditingController? firstNameController,
     TextEditingController? lastNameController,
     TextEditingController? linkedinController,
+    List<String>? pronouns,
     List<DegreeEntry>? degrees,
     TextEditingController? currentCityController,
     this.currentState,
@@ -65,6 +67,7 @@ class MentorFormData {
        firstNameController = firstNameController ?? TextEditingController(),
        lastNameController = lastNameController ?? TextEditingController(),
        linkedinController = linkedinController ?? TextEditingController(),
+       pronouns = pronouns ?? [],
        degrees = degrees ?? [],
        currentCityController = currentCityController ?? TextEditingController(),
        currentJobTitleController =
@@ -88,6 +91,9 @@ class MentorFormData {
     if (emailController.text.trim().isEmpty ||
         !emailController.text.contains('@')) {
       errors.add('Please enter a valid email');
+    }
+    if (pronouns.isEmpty) {
+      errors.add('At least one pronoun selection is required');
     }
     if (firstNameController.text.trim().isEmpty) {
       errors.add('First name is required');
@@ -146,6 +152,7 @@ class MentorFormData {
       'linkedin': linkedinController.text.trim(),
       'firstName': firstNameController.text.trim(),
       'lastName': lastNameController.text.trim(),
+      'pronouns': pronouns,
       'degrees': degrees.map((d) => d.toJson()).toList(),
       'currentCity': currentCityController.text.trim(),
       'currentState': currentState,

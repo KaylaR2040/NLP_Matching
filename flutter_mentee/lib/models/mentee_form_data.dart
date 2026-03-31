@@ -130,7 +130,6 @@ class MenteeFormData {
       'firstName': firstNameController.text,
       'lastName': lastNameController.text,
       'pronouns': pronouns,
-      'pronounsText': pronouns.join(', '),
       'educationLevel': educationLevel,
       'graduationSemester': graduationSemester,
       'graduationYear': graduationYear,

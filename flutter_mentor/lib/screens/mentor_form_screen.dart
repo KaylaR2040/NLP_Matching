@@ -126,6 +126,23 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
                       true,
                     ),
                     const SizedBox(height: 16),
+                    FormFieldWidgets.buildPronounsField(
+                      context,
+                      _formData.pronouns,
+                      (value) async {
+                        final normalized = await _resolveOtherSelection(
+                          value,
+                          fieldLabel: 'Pronouns',
+                        );
+                        if (!mounted) return;
+                        setState(() {
+                          _formData.pronouns
+                            ..clear()
+                            ..addAll(normalized);
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
                     _buildLinkedInField(context),
                     const SizedBox(height: 16),
                     _buildDegreesSection(context),

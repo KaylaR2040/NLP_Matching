@@ -80,8 +80,8 @@ class FormFieldWidgets {
   /// Pronoun chooser.
   static Widget buildPronounsField(
     BuildContext context,
-    String? selectedPronoun,
-    Function(String?) onChanged,
+    List<String> selectedPronouns,
+    Function(List<String>) onChanged,
   ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -96,12 +96,27 @@ class FormFieldWidgets {
         Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: FormOptions.pronouns.map((p) {
-            final selected = selectedPronoun == p;
-            return ChoiceChip(
-              label: Text(p),
-              selected: selected,
-              onSelected: (_) => onChanged(p),
+          children: FormOptions.pronouns.map((pronoun) {
+            final isSelected = _containsOptionSelection(
+              selectedPronouns,
+              pronoun,
+            );
+            return FilterChip(
+              label: Text(pronoun),
+              selected: isSelected,
+              onSelected: (selected) {
+                final updated = List<String>.from(selectedPronouns);
+                if (selected) {
+                  if (!_containsOptionSelection(updated, pronoun)) {
+                    updated.add(pronoun);
+                  }
+                } else {
+                  updated.removeWhere(
+                    (value) => _optionMatchesSelection(value, pronoun),
+                  );
+                }
+                onChanged(updated);
+              },
             );
           }).toList(),
         ),
