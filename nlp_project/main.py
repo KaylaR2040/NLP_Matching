@@ -26,10 +26,14 @@ DEFAULT_STATE_PATH = BASE_DIR / "state" / "matching_state.json"
 DEFAULT_OUTPUT_DIR = BASE_DIR / "output"
 
 
-def _positive_float(raw: str) -> float:
+def _path_arg(raw: str) -> Path:
+    return Path(raw).expanduser()
+
+
+def _weight_value(raw: str) -> float:
     value = float(raw)
-    if value <= 0:
-        raise argparse.ArgumentTypeError("Value must be > 0")
+    if not 1.0 <= value <= 4.0:
+        raise argparse.ArgumentTypeError("Value must be between 1 and 4")
     return value
 
 
@@ -81,14 +85,14 @@ def _mutate_state(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Mentor-mentee matching pipeline")
 
-    parser.add_argument("--mentee-csv", type=Path, default=DEFAULT_MENTEE_CSV)
-    parser.add_argument("--mentor-csv", type=Path, default=DEFAULT_MENTOR_CSV)
-    parser.add_argument("--state-path", type=Path, default=DEFAULT_STATE_PATH)
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--mentee-csv", type=_path_arg, default=DEFAULT_MENTEE_CSV)
+    parser.add_argument("--mentor-csv", type=_path_arg, default=DEFAULT_MENTOR_CSV)
+    parser.add_argument("--state-path", type=_path_arg, default=DEFAULT_STATE_PATH)
+    parser.add_argument("--output-dir", type=_path_arg, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--top-n", type=int, default=25)
     parser.add_argument("--preview", action="store_true", help="Print NLP previews")
 
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers = parser.add_subparsers(dest="command", required=True) 
 
     subparsers.add_parser("run", help="Run matching with current state")
     subparsers.add_parser("show-state", help="Print current state JSON")
@@ -127,7 +131,7 @@ def build_parser() -> argparse.ArgumentParser:
     set_weight = subparsers.add_parser("set-weight", help="Set global or mentee-specific weight")
     set_weight.add_argument("--scope", choices=["global", "mentee"], required=True)
     set_weight.add_argument("--factor", choices=list(FACTOR_KEYS), required=True)
-    set_weight.add_argument("--value", type=_positive_float, required=True)
+    set_weight.add_argument("--value", type=_weight_value, required=True)
     set_weight.add_argument("--mentee-id")
     set_weight.add_argument("--rerun", action="store_true")
 
