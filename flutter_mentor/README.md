@@ -73,6 +73,10 @@ flutter_mentor
 
 4. Deploy the application, and Vercel will provide a live URL for your Flutter web app.
 
+## TODO List:
+Implement Semester OptIn/OptOut per Kaitlyn's request
+Add "thank you for filling out form" page after form is submitted instead on blank screen
+
 ## Contributing
 Contributions are welcome! Please feel free to submit a pull request or open an issue for any enhancements or bug fixes.
 
