@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 /// Loads and caches option data from text files in assets.
 class FormDataLoader {
   static final FormDataLoader _instance = FormDataLoader._internal();
+  static const String _dataDir = 'assets/data';
   factory FormDataLoader() => _instance;
   FormDataLoader._internal();
 
@@ -45,29 +46,27 @@ class FormDataLoader {
   }
 
   Future<List<String>> loadNcsuOrgs() async {
-    _ncsuOrgs ??= await _loadFile('assets/data/ncsu_orgs.txt');
+    _ncsuOrgs ??= await _loadFile('$_dataDir/ncsu_orgs.txt');
     return _ncsuOrgs!;
   }
 
   Future<List<String>> loadUndergradPrograms() async {
-    _undergradPrograms ??= await _loadFile(
-      'assets/data/undergrad_programs.txt',
-    );
+    _undergradPrograms ??= await _loadFile('$_dataDir/undergrad_programs.txt');
     return _undergradPrograms!;
   }
 
   Future<List<String>> loadGradPrograms() async {
-    _gradPrograms ??= await _loadFile('assets/data/grad_programs.txt');
+    _gradPrograms ??= await _loadFile('$_dataDir/grad_programs.txt');
     return _gradPrograms!;
   }
 
   Future<List<String>> loadAbmPrograms() async {
-    _abmPrograms ??= await _loadFile('assets/data/abm_programs.txt');
+    _abmPrograms ??= await _loadFile('$_dataDir/abm_programs.txt');
     return _abmPrograms!;
   }
 
   Future<List<String>> loadPhdPrograms() async {
-    _phdPrograms ??= await _loadFile('assets/data/phd_programs.txt');
+    _phdPrograms ??= await _loadFile('$_dataDir/phd_programs.txt');
     return _phdPrograms!;
   }
 }

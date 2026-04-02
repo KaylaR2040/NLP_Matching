@@ -103,12 +103,6 @@ function buildPayload(config, submissionData) {
     }
   }
 
-  if (config.jsonEntryId) {
-    const mappedPayload = new URLSearchParams();
-    mappedPayload.append(config.jsonEntryId, JSON.stringify(submissionData, null, 2));
-    return mappedPayload;
-  }
-
   throw new Error("Google Form entry configuration is missing");
 }
 

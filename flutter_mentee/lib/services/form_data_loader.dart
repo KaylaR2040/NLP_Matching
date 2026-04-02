@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 /// Loads and caches option data from text files in assets.
 class FormDataLoader {
   static final FormDataLoader _instance = FormDataLoader._internal();
+  static const String _dataDir = 'assets/data';
   factory FormDataLoader() => _instance;
   FormDataLoader._internal();
 
@@ -13,6 +14,8 @@ class FormDataLoader {
   List<String>? _abmPrograms;
   List<String>? _phdPrograms;
   List<String>? _concentrations;
+
+  String _dataPath(String fileName) => '$_dataDir/$fileName';
 
   /// Loads all files required by the form before rendering options.
   Future<void> loadAll() async {
@@ -31,7 +34,7 @@ class FormDataLoader {
     if (_ncsuOrgs != null) return _ncsuOrgs!;
 
     try {
-      final data = await rootBundle.loadString('assets/data/ncsu_orgs.txt');
+      final data = await rootBundle.loadString(_dataPath('ncsu_orgs.txt'));
       _ncsuOrgs = data
           .split('\n')
           .map((line) => line.trim())
@@ -53,7 +56,7 @@ class FormDataLoader {
 
     try {
       final data = await rootBundle.loadString(
-        'assets/data/undergrad_programs.txt',
+        _dataPath('undergrad_programs.txt'),
       );
       _undergradPrograms = data
           .split('\n')
@@ -77,7 +80,7 @@ class FormDataLoader {
     if (_gradPrograms != null) return _gradPrograms!;
 
     try {
-      final data = await rootBundle.loadString('assets/data/grad_programs.txt');
+      final data = await rootBundle.loadString(_dataPath('grad_programs.txt'));
       _gradPrograms = data
           .split('\n')
           .map((line) => line.trim())
@@ -101,7 +104,7 @@ class FormDataLoader {
     if (_concentrations != null) return _concentrations!;
     try {
       final data = await rootBundle.loadString(
-        'assets/data/concentrations.txt',
+        _dataPath('concentrations.txt'),
       );
       _concentrations = data
           .split('\n')
@@ -125,7 +128,7 @@ class FormDataLoader {
     if (_abmPrograms != null) return _abmPrograms!;
 
     try {
-      final data = await rootBundle.loadString('assets/data/abm_programs.txt');
+      final data = await rootBundle.loadString(_dataPath('abm_programs.txt'));
       _abmPrograms = data
           .split('\n')
           .map((line) => line.trim())
@@ -149,7 +152,7 @@ class FormDataLoader {
     if (_phdPrograms != null) return _phdPrograms!;
 
     try {
-      final data = await rootBundle.loadString('assets/data/phd_programs.txt');
+      final data = await rootBundle.loadString(_dataPath('phd_programs.txt'));
       _phdPrograms = data
           .split('\n')
           .map((line) => line.trim())

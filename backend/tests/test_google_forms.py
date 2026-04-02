@@ -24,11 +24,15 @@ class _FakeResponse:
 
 
 class GoogleFormsTests(unittest.TestCase):
-    def test_build_payload_serializes_full_json_into_one_entry(self):
+    def test_build_payload_uses_field_mapping(self):
         config = GoogleFormConfig(
             form_name="mentee",
             response_url="https://example.com/formResponse",
-            json_entry_id="entry.1048570048",
+            field_map={
+                "firstName": "entry.111",
+                "studentOrgs": "entry.222",
+                "previousMentorship": "entry.333",
+            },
             enabled=True,
             required=True,
         )
@@ -42,9 +46,9 @@ class GoogleFormsTests(unittest.TestCase):
             },
         )
 
-        self.assertIn("entry.1048570048", payload)
-        self.assertIn('"firstName": "Kayla"', payload["entry.1048570048"])
-        self.assertIn('"studentOrgs": [', payload["entry.1048570048"])
+        self.assertEqual(payload["entry.111"], "Kayla")
+        self.assertEqual(payload["entry.222"], "IEEE, SWE")
+        self.assertEqual(payload["entry.333"], "YES")
 
     def test_build_payload_supports_field_mapping_for_future_forms(self):
         config = GoogleFormConfig(
@@ -84,7 +88,7 @@ class GoogleFormsTests(unittest.TestCase):
         mock_get_config.return_value = GoogleFormConfig(
             form_name="mentee",
             response_url="https://example.com/formResponse",
-            json_entry_id="entry.1048570048",
+            field_map={"firstName": "entry.1048570048"},
             enabled=True,
             required=True,
         )

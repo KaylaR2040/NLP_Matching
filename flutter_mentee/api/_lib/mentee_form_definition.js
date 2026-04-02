@@ -29,8 +29,7 @@ const MENTEE_FIELD_ORDER = [
   "matchByGradYears",
   "helpTopics",
   "submissionId",
-  "submittedAt",
-  "jsonData"
+  "submittedAt"
 ];
 
 module.exports = {

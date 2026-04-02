@@ -1,7 +1,7 @@
 # flutter_mentor
 
 ## Overview
-The `flutter_mentor` project is a Flutter application designed to facilitate mentorship by providing forms for mentors and mentees, as well as a platform to display mentor questions. The application integrates with a Python script for data processing, enabling advanced functionalities.
+The `flutter_mentor` project is a Flutter application for mentor registration and mentorship matching workflows. Selectable options are loaded from text files under `assets/data`, and the app integrates with a Python script for data processing.
 
 ## Project Structure
 ```
@@ -15,11 +15,9 @@ flutter_mentor
 │   ├── screens
 │   │   ├── home_screen.dart
 │   │   ├── mentor_form_screen.dart
-│   │   ├── mentee_form_screen.dart
-│   │   └── questions_screen.dart
+│   │   └── mentee_form_screen.dart
 │   ├── widgets
-│   │   ├── form_field_widget.dart
-│   │   └── question_card_widget.dart
+│   │   └── form_field_widget.dart
 │   ├── services
 │   │   ├── api_service.dart
 │   │   └── python_integration_service.dart
@@ -27,7 +25,7 @@ flutter_mentor
 │       └── constants.dart
 ├── assets
 │   └── data
-│       └── mentor_questions.json
+│       └── *.txt
 ├── python_scripts
 │   ├── data_processor.py
 │   └── requirements.txt
@@ -39,7 +37,7 @@ flutter_mentor
 
 ## Features
 - **Mentor and Mentee Forms**: Users can fill out forms to register as mentors or mentees.
-- **Question Display**: A dedicated screen to view mentor questions imported from a JSON file.
+- **Data-Driven Options**: Degree and organization options are loaded from text files in `assets/data`.
 - **Data Processing**: Integration with a Python script for advanced data processing tasks.
 
 ## Setup Instructions

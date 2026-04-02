@@ -24,7 +24,10 @@ build/
 .vercel/
 
 # USER DATA
-data/
+/data/*
+!/data/*.txt
+!/data/*.csv
+nlp_project/data/
 
 # OTHER
 .idea/

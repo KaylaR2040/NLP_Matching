@@ -18,9 +18,9 @@ function buildFieldMapFromPrefilledLink(prefilledLink, fieldOrder) {
     }
   }
 
-  if (entryIds.length !== fieldOrder.length) {
+  if (entryIds.length < fieldOrder.length) {
     throw new Error(
-      `Prefilled link has ${entryIds.length} entry ids but ${fieldOrder.length} fields are required`,
+      `Prefilled link has ${entryIds.length} entry ids but at least ${fieldOrder.length} are required`,
     );
   }
 
@@ -51,7 +51,6 @@ function buildGoogleFormConfig({
     enabled: parseBool(process.env[`${envPrefix}_ENABLED`], defaultEnabled),
     required: parseBool(process.env[`${envPrefix}_REQUIRED`], defaultRequired),
     responseUrl: process.env[`${envPrefix}_RESPONSE_URL`] || defaultResponseUrl,
-    jsonEntryId: process.env[`${envPrefix}_JSON_ENTRY_ID`] || "",
     fieldMap: parseJsonObject(process.env[`${envPrefix}_FIELD_MAP_JSON`], defaultFieldMap),
   };
 }

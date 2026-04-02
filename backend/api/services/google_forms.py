@@ -61,7 +61,6 @@ class GoogleFormSubmissionError(RuntimeError):
 class GoogleFormConfig:
     form_name: str
     response_url: str = ""
-    json_entry_id: str = ""
     field_map: Mapping[str, str] = field(default_factory=dict)
     enabled: bool = False
     required: bool = False
@@ -69,7 +68,7 @@ class GoogleFormConfig:
     def is_configured(self) -> bool:
         if not self.enabled or not self.response_url:
             return False
-        return bool(self.json_entry_id or self.field_map)
+        return bool(self.field_map)
 
 
 @dataclass(frozen=True)
@@ -102,7 +101,6 @@ def get_google_form_config(form_type: str) -> GoogleFormConfig:
             response_url=_normalize_google_form_response_url(
                 os.getenv("MENTEE_GOOGLE_FORM_RESPONSE_URL", default_url)
             ),
-            json_entry_id=os.getenv("MENTEE_GOOGLE_FORM_JSON_ENTRY_ID", ""),
             field_map=_parse_field_map(
                 os.getenv("MENTEE_GOOGLE_FORM_FIELD_MAP_JSON"),
                 _DEFAULT_MENTEE_FIELD_MAP,
@@ -124,7 +122,6 @@ def get_google_form_config(form_type: str) -> GoogleFormConfig:
             response_url=_normalize_google_form_response_url(
                 os.getenv("MENTOR_GOOGLE_FORM_RESPONSE_URL", default_mentor_url)
             ),
-            json_entry_id=os.getenv("MENTOR_GOOGLE_FORM_JSON_ENTRY_ID", ""),
             field_map=_parse_field_map(
                 os.getenv("MENTOR_GOOGLE_FORM_FIELD_MAP_JSON"),
                 _DEFAULT_MENTOR_FIELD_MAP,
@@ -205,16 +202,6 @@ def _build_payload(
             payload[entry_id] = _stringify_value(resolved_value)
         if payload:
             return payload
-
-    if config.json_entry_id:
-        return {
-            config.json_entry_id: json.dumps(
-                submission_data,
-                indent=2,
-                sort_keys=True,
-                ensure_ascii=False,
-            ),
-        }
 
     raise GoogleFormSubmissionError(
         f"{config.form_name} Google Form config is missing entry mappings"

@@ -24,8 +24,7 @@ const MENTOR_FIELD_ORDER = [
   "whyInterested",
   "professionalExperience",
   "aboutYourself",
-  "studentsInterested",
-  "jsonData"
+  "studentsInterested"
 ];
 
 module.exports = {
