@@ -23,14 +23,14 @@ def print_nlp_preview(people: Sequence[object], label: str) -> None:
 
 
 def print_run_summary(result: MatchingRunResult, top_n: int = 5) -> None:
-    """Print concise run summary and top scored pairs."""
+    """Print concise run summary and final assignment results."""
     print("\n=== Summary ===")
     for key, value in result.summary.items():
         print(f"{key}: {value}")
 
-    print("\nTop Ranked Matches")
+    print("\nFinal Assignments")
     print("=" * 60)
-    for idx, pair in enumerate(result.ranked_pairs[:top_n], start=1):
+    for idx, pair in enumerate(result.assignments[:top_n], start=1):
         _print_pair(idx, pair)
 
 
@@ -38,5 +38,5 @@ def _print_pair(index: int, pair: PairScore) -> None:
     print(f"\n#{index} {pair.mentee_name} ({pair.mentee_id}) -> {pair.mentor_name} ({pair.mentor_id})")
     print(f"  Match: {pair.match_score * 100:.2f}%")
     for key, value in pair.component_scores.items():
-        weight = pair.effective_weights.get(key, 0.0)
-        print(f"  - {key:<12} score={value:.3f} weight={weight:.3f}")
+        weight = pair.display_weights.get(key, 0.0) * 100.0
+        print(f"  - {key:<12} score={value:.3f} weight={weight:.0f}%")

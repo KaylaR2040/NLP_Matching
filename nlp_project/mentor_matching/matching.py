@@ -51,6 +51,8 @@ def greedy_assign(
         if locked_pair not in lookup:
             continue
         locked_score = replace(lookup[locked_pair], locked=True)
+        if locked_score.mentee_id in assigned_mentees or locked_score.mentor_id in assigned_mentors:
+            continue
         assignments.append(locked_score)
         assigned_mentees.add(locked_score.mentee_id)
         assigned_mentors.add(locked_score.mentor_id)

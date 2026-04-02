@@ -21,6 +21,13 @@ def _parse_pair_key(value: str) -> Tuple[str, str]:
     return tuple(value.split("::", 1))  # type: ignore[return-value]
 
 
+def _validate_weight_range(value: float) -> float:
+    numeric = float(value)
+    if not 1.0 <= numeric <= 4.0:
+        raise ValueError("Weight values must be between 1 and 4")
+    return numeric
+
+
 @dataclass
 class MatchingState:
     """Mutable state that controls reruns and manual constraints."""
@@ -84,12 +91,12 @@ class MatchingState:
     def set_global_weight(self, factor: str, value: float) -> None:
         if factor not in FACTOR_KEYS:
             raise ValueError(f"Unknown factor '{factor}'. Allowed: {', '.join(FACTOR_KEYS)}")
-        self.global_weights[factor] = value
+        self.global_weights[factor] = _validate_weight_range(value)
 
     def set_mentee_weight(self, mentee_id: str, factor: str, value: float) -> None:
         if factor not in FACTOR_KEYS:
             raise ValueError(f"Unknown factor '{factor}'. Allowed: {', '.join(FACTOR_KEYS)}")
-        self.mentee_weight_overrides.setdefault(mentee_id, {})[factor] = value
+        self.mentee_weight_overrides.setdefault(mentee_id, {})[factor] = _validate_weight_range(value)
 
     def rejected_pair_tuples(self) -> Set[Tuple[str, str]]:
         return {_parse_pair_key(item) for item in self.rejected_pairs}

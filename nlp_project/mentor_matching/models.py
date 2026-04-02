@@ -25,11 +25,14 @@ class Mentee:
     mentee_id: str
     name: str
     role: str
+    pronouns: str = ""
+    degree_programs: List[str] = field(default_factory=list)
+    student_orgs: List[str] = field(default_factory=list)
+    graduation_year: str = ""
+    education_level: str = ""
+    help_topics: List[str] = field(default_factory=list)
     interests: List[str] = field(default_factory=list)
     goals: str = ""
-    topics: List[str] = field(default_factory=list)
-    style: List[str] = field(default_factory=list)
-    availability: List[str] = field(default_factory=list)
     background: str = ""
     source_mentor_id: str = ""
     source_row_index: Optional[int] = None
@@ -41,7 +44,17 @@ class Mentee:
         """Concatenate free-text fields for NLP embedding."""
         return " ".join(
             part
-            for part in [self.goals, self.background, " ".join(self.interests), " ".join(self.topics)]
+            for part in [
+                self.goals,
+                self.background,
+                self.pronouns,
+                self.education_level,
+                self.graduation_year,
+                " ".join(self.degree_programs),
+                " ".join(self.student_orgs),
+                " ".join(self.interests),
+                " ".join(self.help_topics),
+            ]
             if part
         ).strip()
 
@@ -53,11 +66,14 @@ class Mentor:
     mentor_id: str
     name: str
     role: str
+    pronouns: str = ""
+    degree_programs: List[str] = field(default_factory=list)
+    student_orgs: List[str] = field(default_factory=list)
+    graduation_year: str = ""
+    help_topics: List[str] = field(default_factory=list)
+    max_mentees: int = 1
     expertise: List[str] = field(default_factory=list)
     goals: str = ""
-    topics: List[str] = field(default_factory=list)
-    style: List[str] = field(default_factory=list)
-    availability: List[str] = field(default_factory=list)
     bio: str = ""
     prior_mentoring_experience: str = ""
     mentorship_motivation: str = ""
@@ -75,10 +91,14 @@ class Mentor:
             for part in [
                 self.goals,
                 self.bio,
+                self.pronouns,
+                self.graduation_year,
                 self.professional_experience,
                 self.mentorship_motivation,
+                " ".join(self.degree_programs),
+                " ".join(self.student_orgs),
                 " ".join(self.expertise),
-                " ".join(self.topics),
+                " ".join(self.help_topics),
                 " ".join(self.personal_interests),
                 " ".join(self.domain_tags),
             ]
@@ -96,6 +116,7 @@ class PairScore:
     mentor_name: str
     component_scores: Dict[str, float]
     effective_weights: Dict[str, float]
+    display_weights: Dict[str, float]
     match_score: float
     locked: bool = False
 
@@ -107,6 +128,7 @@ class PairScore:
             "mentor_name": self.mentor_name,
             "component_scores": self.component_scores,
             "effective_weights": self.effective_weights,
+            "display_weights": self.display_weights,
             "match_score": self.match_score,
             "match_percent": round(self.match_score * 100, 2),
             "locked": self.locked,

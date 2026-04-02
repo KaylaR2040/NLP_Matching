@@ -30,11 +30,11 @@ class Mentee(BaseModel):
     aboutYourself: Optional[str] = None
     
     # Matching Priorities (1-4 Likert scale)
-    matchByIndustry: float = 2.0
-    matchByDegree: float = 2.0
-    matchByClubs: float = 2.0
-    matchByIdentity: float = 2.0
-    matchByGradYears: float = 2.0
+    matchByIndustry: float = Field(default=2.0, ge=1.0, le=4.0)
+    matchByDegree: float = Field(default=2.0, ge=1.0, le=4.0)
+    matchByClubs: float = Field(default=2.0, ge=1.0, le=4.0)
+    matchByIdentity: float = Field(default=2.0, ge=1.0, le=4.0)
+    matchByGradYears: float = Field(default=2.0, ge=1.0, le=4.0)
     
     # Mentoring Preferences
     helpTopics: List[str]  # Multi-select chips
