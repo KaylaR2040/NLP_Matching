@@ -187,11 +187,17 @@ def _grad_year_similarity(mentee: Mentee, mentor: Mentor) -> float:
 
 
 def _nlp_similarity(mentee: Mentee, mentor: Mentor) -> float:
+    # This is the final NLP score used in pair scoring.
+    # It compares the deterministic embeddings built in pipeline step 4.
     return cosine_similarity(mentee.embedding, mentor.embedding)
 
 
 def score_pair(mentee: Mentee, mentor: Mentor, state: MatchingState) -> PairScore:
-    """Score one mentor-mentee pair with weighted factor aggregation."""
+    """
+    Score one mentor-mentee pair with weighted factor aggregation.
+
+    This corresponds to pipeline step 6 in ``MatchingPipeline.run``.
+    """
     component_scores = {
         "industry": _industry_similarity(mentee, mentor),
         "degree": _degree_similarity(mentee, mentor),

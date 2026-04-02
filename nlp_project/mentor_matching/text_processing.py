@@ -45,15 +45,25 @@ def lemmatize_tokens(tokens: Iterable[str]) -> List[str]:
 
 
 def attach_nlp_features(people: Iterable[object], use_stemming: bool = False) -> None:
-    """Populate NLP fields on participants in-place."""
+    """
+    Populate NLP fields on participants in-place.
+
+    This corresponds to pipeline step 3 in ``MatchingPipeline.run``.
+    Important: this is deterministic preprocessing, not model training.
+    """
     for person in people:
         raw_text = person.profile_text()
 
+        # Sentence splitting is only for inspection/debugging.
         person.nlp.sentences = segment_sentences(raw_text)
+        # Tokenization breaks the profile text into individual lexical units.
         person.nlp.tokens = tokenize_text(raw_text)
+        # Stopword removal drops very common low-signal words like "the" and "and".
         person.nlp.filtered_tokens = remove_stopwords(person.nlp.tokens)
+        # Stemming and lemmatization are simple normalization passes.
         person.nlp.stemmed_tokens = stem_tokens(person.nlp.filtered_tokens)
         person.nlp.lemmatized_tokens = lemmatize_tokens(person.nlp.filtered_tokens)
 
+        # The normalized text is the actual input to embedding generation in the next step.
         final_tokens = person.nlp.stemmed_tokens if use_stemming else person.nlp.lemmatized_tokens
         person.nlp.normalized_text = " ".join(token for token in final_tokens if token.strip())

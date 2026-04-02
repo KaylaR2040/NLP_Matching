@@ -45,6 +45,12 @@ def _run_pipeline(
     top_n: int,
     preview: bool,
 ) -> None:
+    # Main flow:
+    # 1) load persisted rerun state
+    # 2) parse mentee + mentor CSV inputs
+    # 3) build NLP features and deterministic embeddings
+    # 4) score every mentor/mentee pair
+    # 5) assign final matches and write outputs
     state = load_state(state_path)
     pipeline = MatchingPipeline()
     result = pipeline.run(mentee_csv, mentor_csv, state)
@@ -54,6 +60,7 @@ def _run_pipeline(
     write_outputs(result, output_dir, top_n=top_n)
 
     if preview:
+        # Optional debug view of the intermediate NLP artifacts produced in step 3.
         print_nlp_preview(result.mentees, "Mentee")
         print_nlp_preview(result.mentors, "Mentor")
 

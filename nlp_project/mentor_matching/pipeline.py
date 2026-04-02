@@ -43,17 +43,24 @@ class MatchingPipeline:
         mentor_csv_path: Path,
         state: MatchingState,
     ) -> MatchingRunResult:
+        # Step 1: read raw CSV rows into typed Mentee and Mentor objects.
         mentees = run_with_retry("parse_mentee_csv", lambda: parse_mentee_csv(mentee_csv_path))
         mentors = run_with_retry("parse_mentor_csv", lambda: parse_mentor_csv(mentor_csv_path))
 
+        # Step 2: apply manual exclusions from persisted rerun state before NLP/scoring.
         filtered_mentees, filtered_mentors = apply_user_exclusions(mentees, mentors, state)
 
+        # Step 3: build normalized NLP text for every participant.
+        # This is preprocessing only; no model training happens here.
         attach_nlp_features(filtered_mentees)
         attach_nlp_features(filtered_mentors)
 
+        # Step 4: convert normalized text into deterministic local embeddings.
+        # These vectors are hash-based bag-of-words encodings, not a trained neural model.
         attach_embeddings(filtered_mentees)
         attach_embeddings(filtered_mentors)
 
+        # Step 5: load pair-level constraints before ranking mentor/mentee pairs.
         prohibited_pairs = build_prohibited_pairs(state)
         locked_pairs = validate_locked_pairs(
             build_locked_pairs(state),
@@ -61,6 +68,7 @@ class MatchingPipeline:
             mentor_ids={mentor.mentor_id for mentor in filtered_mentors},
         )
 
+        # Step 6: score every possible mentor/mentee pair using direct matches + NLP cosine similarity.
         ranked_pairs = build_ranked_pairs(
             filtered_mentees,
             filtered_mentors,
@@ -68,6 +76,8 @@ class MatchingPipeline:
             prohibited_pairs=prohibited_pairs,
             locked_pairs=locked_pairs,
         )
+
+        # Step 7: choose final assignments from the ranked pair list.
         assignments = greedy_assign(ranked_pairs, locked_pairs)
 
         summary = {
@@ -89,7 +99,7 @@ class MatchingPipeline:
 
 
 def write_outputs(result: MatchingRunResult, output_dir: Path, top_n: int = 25) -> None:
-    """Persist run artifacts for downstream review or API use."""
+    """Persist the final ranking/assignment artifacts after pipeline execution."""
     output_dir.mkdir(parents=True, exist_ok=True)
 
     payload = {
