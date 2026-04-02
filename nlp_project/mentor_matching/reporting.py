@@ -38,5 +38,9 @@ def _print_pair(index: int, pair: PairScore) -> None:
     print(f"\n#{index} {pair.mentee_name} ({pair.mentee_id}) -> {pair.mentor_name} ({pair.mentor_id})")
     print(f"  Match: {pair.match_score * 100:.2f}%")
     for key, value in pair.component_scores.items():
-        weight = pair.display_weights.get(key, 0.0) * 100.0
-        print(f"  - {key:<12} score={value:.3f} weight={weight:.0f}%")
+        print(f"  - {key:<12} score={value:.3f} weight={format_weight_percent(pair.display_weights, key)}")
+
+
+def format_weight_percent(weights: dict[str, float], key: str) -> str:
+    """Format a fractional weight as a one-decimal percentage for match explanations."""
+    return f"{weights.get(key, 0.0) * 100.0:.1f}%"

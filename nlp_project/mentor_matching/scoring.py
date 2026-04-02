@@ -10,6 +10,17 @@ from .embeddings import cosine_similarity
 from .models import Mentee, Mentor, PairScore
 from .state_store import MatchingState
 
+DIRECT_MATCH_FACTORS = ("industry", "degree", "orgs", "identity", "grad_year")
+NLP_FACTOR = "nlp"
+NLP_WEIGHT = 0.5
+DIRECT_MATCH_SHARE = 0.5
+RANKING_TO_PRIORITY = {
+    1: 0.0,
+    2: 11.0,
+    3: 44.0,
+    4: 100.0,
+}
+
 
 def _normalize_items(values: Sequence[str]) -> Set[str]:
     return {str(value).strip().lower() for value in values if str(value).strip()}
@@ -67,28 +78,18 @@ def _hybrid_list_similarity(
     return max(exact, token)
 
 
-def _importance_to_consideration(value: float) -> float:
-    """Map 1..4 importance to 0..1 consideration with quadratic emphasis."""
-    clamped = min(4.0, max(1.0, float(value)))
-    shifted = (clamped - 1.0) / 3.0
-    return shifted * shifted
+def ranking_to_priority_value(value: float) -> float:
+    """Convert a 1..4 importance ranking into its relative direct-match priority."""
+    try:
+        ranking = int(round(float(value)))
+    except (TypeError, ValueError):
+        ranking = int(DEFAULT_BASE_WEIGHTS["industry"])
+    ranking = min(4, max(1, ranking))
+    return RANKING_TO_PRIORITY[ranking]
 
 
-def _normalize_weight_map(raw_weights: Dict[str, float]) -> Dict[str, float]:
-    cleaned: Dict[str, float] = {}
-    for factor in FACTOR_KEYS:
-        value = raw_weights.get(factor, DEFAULT_BASE_WEIGHTS[factor])
-        cleaned[factor] = max(0.0, float(value))
-
-    total = sum(cleaned.values())
-    if total == 0:
-        return {factor: 1.0 / len(FACTOR_KEYS) for factor in FACTOR_KEYS}
-
-    return {factor: cleaned[factor] / total for factor in FACTOR_KEYS}
-
-
-def _build_raw_weights(mentee: Mentee, state: MatchingState) -> Dict[str, float]:
-    """Build unnormalized factor weights from 1..4 importance selections."""
+def _build_raw_rankings(mentee: Mentee, state: MatchingState) -> Dict[str, float]:
+    """Build raw factor rankings from defaults, mentee selections, and overrides."""
     raw = dict(DEFAULT_BASE_WEIGHTS)
 
     for factor, value in state.global_weights.items():
@@ -103,33 +104,47 @@ def _build_raw_weights(mentee: Mentee, state: MatchingState) -> Dict[str, float]
         if factor in raw:
             raw[factor] = float(value)
 
+    return {factor: float(raw.get(factor, DEFAULT_BASE_WEIGHTS[factor])) for factor in FACTOR_KEYS}
+
+
+def calculate_direct_match_weights(rankings: Dict[str, float]) -> Dict[str, float]:
+    """
+    Allocate the direct-match half of the final score across the five direct factors.
+
+    If every direct ranking maps to zero priority, the direct half is intentionally left
+    unused so NLP still contributes exactly 50% of the final score.
+    """
+    priorities = {
+        factor: ranking_to_priority_value(rankings.get(factor, DEFAULT_BASE_WEIGHTS[factor]))
+        for factor in DIRECT_MATCH_FACTORS
+    }
+    total_priority = sum(priorities.values())
+
+    if total_priority == 0:
+        return {factor: 0.0 for factor in DIRECT_MATCH_FACTORS}
+
     return {
-        factor: _importance_to_consideration(float(raw.get(factor, DEFAULT_BASE_WEIGHTS[factor])))
-        for factor in FACTOR_KEYS
+        factor: DIRECT_MATCH_SHARE * (priorities[factor] / total_priority)
+        for factor in DIRECT_MATCH_FACTORS
     }
 
 
 def compute_effective_weights(mentee: Mentee, state: MatchingState) -> Dict[str, float]:
     """
-    Build final factor weights by combining:
-    1) defaults
-    2) global admin overrides
-    3) mentee-provided rankings
-    4) mentee-specific admin overrides
+    Build final factor weights with a fixed 50/50 split:
+    - NLP always contributes exactly 50%
+    - direct-match factors divide the other 50% by mapped priority
     """
-    return _normalize_weight_map(_build_raw_weights(mentee, state))
+    rankings = _build_raw_rankings(mentee, state)
+    weights = {factor: 0.0 for factor in FACTOR_KEYS}
+    weights.update(calculate_direct_match_weights(rankings))
+    weights[NLP_FACTOR] = NLP_WEIGHT
+    return weights
 
 
 def compute_display_weights(mentee: Mentee, state: MatchingState) -> Dict[str, float]:
-    """
-    Convert the human-facing 1..4 importance scale into 0..100 percentages
-    for reporting, independent of the internal normalized scoring weights.
-    """
-    raw = _build_raw_weights(mentee, state)
-    return {
-        factor: min(1.0, max(0.0, float(raw.get(factor, 0.0))))
-        for factor in FACTOR_KEYS
-    }
+    """Return final scoring weights for reporting as fractions of 1.0."""
+    return compute_effective_weights(mentee, state)
 
 
 def _industry_similarity(mentee: Mentee, mentor: Mentor) -> float:

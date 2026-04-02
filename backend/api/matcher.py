@@ -81,12 +81,8 @@ class MentorMatcher:
         """Find top K mentors for a mentee using NLP + weighted scoring
         
         Scoring components:
-        - NLP semantic similarity (base, from sentence embeddings)
-        - Industry overlap (weighted by matchByIndustry)
-        - Degree overlap (weighted by matchByDegree)
-        - Club/org overlap (weighted by matchByClubs)
-        - Pronoun/identity match (weighted by matchByIdentity)
-        - Graduation year proximity (weighted by matchByGradYears)
+        - NLP semantic similarity fixed at 50% of the final score
+        - Direct-match categories share the other 50% based on mapped priorities
         """
         
         # Embed mentors if not already done or if list changed
@@ -114,11 +110,7 @@ class MentorMatcher:
             identity_score = 1.0 if mentee.pronouns == mentor.pronouns else 0.3
             grad_score = self._grad_year_closeness(mentee, mentor)
             
-            # Also compute help topic overlap (always important)
-            help_score = self._jaccard(mentee.helpTopics, mentor.helpTopics)
-            
-            # Weighted priority score
-            priority_score = (
+            direct_match_score = (
                 weights['industry'] * industry_score +
                 weights['degree'] * degree_score +
                 weights['clubs'] * clubs_score +
@@ -126,15 +118,7 @@ class MentorMatcher:
                 weights['gradYears'] * grad_score
             )
             
-            # Final combined score:
-            # 40% NLP semantic similarity
-            # 35% priority-weighted field matching
-            # 25% help topic overlap
-            total_score = (
-                0.40 * base_nlp +
-                0.35 * priority_score +
-                0.25 * help_score
-            )
+            total_score = (weights['nlp'] * base_nlp) + direct_match_score
             
             scores.append({
                 'mentor_id': mentor.id,
@@ -142,14 +126,21 @@ class MentorMatcher:
                 'mentor_email': mentor.email,
                 'total_score': round(total_score, 4),
                 'nlp_similarity': round(base_nlp, 4),
-                'priority_weighted_score': round(priority_score, 4),
+                'priority_weighted_score': round(direct_match_score, 4),
+                'weights': {
+                    'industry': round(weights['industry'] * 100, 1),
+                    'degree': round(weights['degree'] * 100, 1),
+                    'orgs': round(weights['clubs'] * 100, 1),
+                    'identity': round(weights['identity'] * 100, 1),
+                    'grad_year': round(weights['gradYears'] * 100, 1),
+                    'nlp': round(weights['nlp'] * 100, 1),
+                },
                 'component_scores': {
                     'industry_overlap': round(industry_score, 4),
                     'degree_overlap': round(degree_score, 4),
                     'club_overlap': round(clubs_score, 4),
                     'identity_match': round(identity_score, 4),
                     'grad_year_closeness': round(grad_score, 4),
-                    'help_topic_overlap': round(help_score, 4),
                 },
                 'matching_help_topics': list(set(mentee.helpTopics).intersection(set(mentor.helpTopics))),
                 'common_organizations': list(set(mentee.studentOrgs).intersection(set(mentor.studentOrgs))),
