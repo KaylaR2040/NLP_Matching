@@ -13,9 +13,9 @@ import json
 from pathlib import Path
 from typing import Callable
 
-from mentor_matching.constants import FACTOR_KEYS
 from mentor_matching.pipeline import MatchingPipeline, write_outputs
 from mentor_matching.reporting import print_nlp_preview, print_run_summary
+from mentor_matching.scoring_config import DIRECT_MATCH_FACTORS
 from mentor_matching.state_store import MatchingState, load_state, save_state
 
 
@@ -130,7 +130,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     set_weight = subparsers.add_parser("set-weight", help="Set global or mentee-specific weight")
     set_weight.add_argument("--scope", choices=["global", "mentee"], required=True)
-    set_weight.add_argument("--factor", choices=list(FACTOR_KEYS), required=True)
+    set_weight.add_argument("--factor", choices=list(DIRECT_MATCH_FACTORS), required=True)
     set_weight.add_argument("--value", type=_weight_value, required=True)
     set_weight.add_argument("--mentee-id")
     set_weight.add_argument("--rerun", action="store_true")

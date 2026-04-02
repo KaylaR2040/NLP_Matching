@@ -7,8 +7,8 @@ import json
 from pathlib import Path
 from typing import Dict, List, Set, Tuple
 
-from .constants import FACTOR_KEYS
 from .retry_utils import run_with_retry
+from .scoring_config import DIRECT_MATCH_FACTORS
 
 
 def _pair_key(mentee_id: str, mentor_id: str) -> str:
@@ -89,13 +89,13 @@ class MatchingState:
         self.excluded_mentor_ids.discard(user_id)
 
     def set_global_weight(self, factor: str, value: float) -> None:
-        if factor not in FACTOR_KEYS:
-            raise ValueError(f"Unknown factor '{factor}'. Allowed: {', '.join(FACTOR_KEYS)}")
+        if factor not in DIRECT_MATCH_FACTORS:
+            raise ValueError(f"Unknown factor '{factor}'. Allowed: {', '.join(DIRECT_MATCH_FACTORS)}")
         self.global_weights[factor] = _validate_weight_range(value)
 
     def set_mentee_weight(self, mentee_id: str, factor: str, value: float) -> None:
-        if factor not in FACTOR_KEYS:
-            raise ValueError(f"Unknown factor '{factor}'. Allowed: {', '.join(FACTOR_KEYS)}")
+        if factor not in DIRECT_MATCH_FACTORS:
+            raise ValueError(f"Unknown factor '{factor}'. Allowed: {', '.join(DIRECT_MATCH_FACTORS)}")
         self.mentee_weight_overrides.setdefault(mentee_id, {})[factor] = _validate_weight_range(value)
 
     def rejected_pair_tuples(self) -> Set[Tuple[str, str]]:

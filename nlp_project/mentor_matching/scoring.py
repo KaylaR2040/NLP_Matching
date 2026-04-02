@@ -8,18 +8,10 @@ from typing import Dict, Iterable, List, Sequence, Set
 from .constants import DEFAULT_BASE_WEIGHTS, DOMAIN_STOP_WORDS, FACTOR_KEYS, STOP_WORDS
 from .embeddings import cosine_similarity
 from .models import Mentee, Mentor, PairScore
+from .scoring_config import DIRECT_MATCH_FACTORS, load_scoring_config
 from .state_store import MatchingState
 
-DIRECT_MATCH_FACTORS = ("industry", "degree", "orgs", "identity", "grad_year")
 NLP_FACTOR = "nlp"
-NLP_WEIGHT = 0.5
-DIRECT_MATCH_SHARE = 0.5
-RANKING_TO_PRIORITY = {
-    1: 0.0,
-    2: 11.0,
-    3: 44.0,
-    4: 100.0,
-}
 
 
 def _normalize_items(values: Sequence[str]) -> Set[str]:
@@ -78,14 +70,15 @@ def _hybrid_list_similarity(
     return max(exact, token)
 
 
-def ranking_to_priority_value(value: float) -> float:
-    """Convert a 1..4 importance ranking into its relative direct-match priority."""
+def ranking_to_priority_value(value: float, factor: str) -> float:
+    """Convert a 1..4 importance ranking into its configured direct-match priority."""
+    config = load_scoring_config()
     try:
         ranking = int(round(float(value)))
     except (TypeError, ValueError):
         ranking = int(DEFAULT_BASE_WEIGHTS["industry"])
     ranking = min(4, max(1, ranking))
-    return RANKING_TO_PRIORITY[ranking]
+    return config.priorities_by_factor[factor][ranking]
 
 
 def _build_raw_rankings(mentee: Mentee, state: MatchingState) -> Dict[str, float]:
@@ -109,36 +102,39 @@ def _build_raw_rankings(mentee: Mentee, state: MatchingState) -> Dict[str, float
 
 def calculate_direct_match_weights(rankings: Dict[str, float]) -> Dict[str, float]:
     """
-    Allocate the direct-match half of the final score across the five direct factors.
+    Allocate the non-NLP share of the final score across the five direct factors.
 
     If every direct ranking maps to zero priority, the direct half is intentionally left
-    unused so NLP still contributes exactly 50% of the final score.
+    unused so the configured NLP share remains unchanged.
     """
+    config = load_scoring_config()
+    direct_match_share = 1.0 - config.nlp_weight
     priorities = {
-        factor: ranking_to_priority_value(rankings.get(factor, DEFAULT_BASE_WEIGHTS[factor]))
+        factor: ranking_to_priority_value(rankings.get(factor, DEFAULT_BASE_WEIGHTS[factor]), factor)
         for factor in DIRECT_MATCH_FACTORS
     }
     total_priority = sum(priorities.values())
 
-    if total_priority == 0:
+    if total_priority == 0 or direct_match_share <= 0.0:
         return {factor: 0.0 for factor in DIRECT_MATCH_FACTORS}
 
     return {
-        factor: DIRECT_MATCH_SHARE * (priorities[factor] / total_priority)
+        factor: direct_match_share * (priorities[factor] / total_priority)
         for factor in DIRECT_MATCH_FACTORS
     }
 
 
 def compute_effective_weights(mentee: Mentee, state: MatchingState) -> Dict[str, float]:
     """
-    Build final factor weights with a fixed 50/50 split:
-    - NLP always contributes exactly 50%
-    - direct-match factors divide the other 50% by mapped priority
+    Build final factor weights from ``scoring.csv``:
+    - NLP contributes the configured ``nlp_weight``
+    - direct-match factors divide the remaining share by configured priorities
     """
+    config = load_scoring_config()
     rankings = _build_raw_rankings(mentee, state)
     weights = {factor: 0.0 for factor in FACTOR_KEYS}
     weights.update(calculate_direct_match_weights(rankings))
-    weights[NLP_FACTOR] = NLP_WEIGHT
+    weights[NLP_FACTOR] = config.nlp_weight
     return weights
 
 

@@ -8,8 +8,9 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Sequence
 
-from .constants import DEFAULT_BASE_WEIGHTS, FACTOR_KEYS
+from .constants import DEFAULT_BASE_WEIGHTS
 from .models import Mentee, Mentor
+from .scoring_config import DIRECT_MATCH_FACTORS
 
 
 def _clean(value: object) -> str:
@@ -210,7 +211,7 @@ def _extract_ranking_weights(row: Dict[str, str]) -> Dict[str, float]:
     alias_map = _ranking_aliases()
     output: Dict[str, float] = {}
 
-    for factor in FACTOR_KEYS:
+    for factor in DIRECT_MATCH_FACTORS:
         aliases = alias_map.get(factor, ())
         extracted = ""
         for alias in aliases:

@@ -3,12 +3,7 @@ from typing import List, Optional
 from datetime import datetime
 from uuid import uuid4
 
-RANKING_TO_PRIORITY = {
-    1: 0.0,
-    2: 11.0,
-    3: 44.0,
-    4: 100.0,
-}
+from ..scoring_config import load_scoring_config
 
 class Mentee(BaseModel):
     """Mentee data model matching the Flutter MenteeFormData.toJson() output"""
@@ -87,28 +82,31 @@ class Mentee(BaseModel):
         return " | ".join(text_parts)
     
     def get_priority_weights(self):
-        """Return final 50/50 scoring weights for direct-match fields plus NLP."""
+        """Return final scoring weights from the shared CSV configuration."""
+        config = load_scoring_config()
+        direct_match_share = 1.0 - config.nlp_weight
         priorities = {
-            'industry': self._ranking_to_priority(self.matchByIndustry),
-            'degree': self._ranking_to_priority(self.matchByDegree),
-            'clubs': self._ranking_to_priority(self.matchByClubs),
-            'identity': self._ranking_to_priority(self.matchByIdentity),
-            'gradYears': self._ranking_to_priority(self.matchByGradYears),
+            'industry': self._ranking_to_priority(self.matchByIndustry, 'industry'),
+            'degree': self._ranking_to_priority(self.matchByDegree, 'degree'),
+            'clubs': self._ranking_to_priority(self.matchByClubs, 'orgs'),
+            'identity': self._ranking_to_priority(self.matchByIdentity, 'identity'),
+            'gradYears': self._ranking_to_priority(self.matchByGradYears, 'grad_year'),
         }
         total_priority = sum(priorities.values())
 
-        if total_priority == 0:
+        if total_priority == 0 or direct_match_share <= 0.0:
             direct_weights = {key: 0.0 for key in priorities}
         else:
             direct_weights = {
-                key: 0.5 * (value / total_priority)
+                key: direct_match_share * (value / total_priority)
                 for key, value in priorities.items()
             }
 
-        direct_weights['nlp'] = 0.5
+        direct_weights['nlp'] = config.nlp_weight
         return direct_weights
 
     @staticmethod
-    def _ranking_to_priority(value: float) -> float:
+    def _ranking_to_priority(value: float, factor: str) -> float:
+        config = load_scoring_config()
         ranking = min(4, max(1, int(round(float(value)))))
-        return RANKING_TO_PRIORITY[ranking]
+        return config.priorities_by_factor[factor][ranking]

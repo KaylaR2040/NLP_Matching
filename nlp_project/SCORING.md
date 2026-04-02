@@ -1,13 +1,13 @@
 # Matching Scoring
 
-This document explains how mentor/mentee match scores are calculated, how weights are derived, and where to add a worked explain-run example.
+This document explains how mentor/mentee match scores are calculated, how weights are derived from `scoring.csv`, and where to add a worked explain-run example.
 
 ## Overview
 
-Each mentor/mentee pair gets a final score made from two halves:
+Each mentor/mentee pair gets a final score made from two pieces:
 
-- `50%` from NLP similarity
-- `50%` from direct-match categories combined
+- `nlp_weight` from NLP similarity
+- `1 - nlp_weight` from direct-match categories combined
 
 The direct-match categories are:
 
@@ -16,6 +16,39 @@ The direct-match categories are:
 - `orgs`
 - `identity`
 - `grad_year`
+
+The values come from [scoring.csv](/home/connor/ECE495_IndepStudy/Content/Code/nlp_project/scoring.csv).
+
+## Scoring CSV
+
+The scoring configuration file lives at [scoring.csv](/home/connor/ECE495_IndepStudy/Content/Code/nlp_project/scoring.csv).
+
+It controls two things:
+
+- the priority value assigned to student rankings `1`, `2`, `3`, and `4` for each direct-match section
+- the global `nlp_weight` used by both the CLI matching pipeline and the backend API matcher
+
+The file format is:
+
+```csv
+section,rank_1,rank_2,rank_3,rank_4,nlp_weight
+industry,0,11,44,100,
+degree,0,11,44,100,
+orgs,0,11,44,100,
+identity,0,11,44,100,
+grad_year,0,11,44,100,
+nlp,,,,,0.5
+```
+
+Rules:
+
+- each direct-match section must have one row: `industry`, `degree`, `orgs`, `identity`, `grad_year`
+- the `nlp` row must define `nlp_weight`
+- `nlp_weight` must be between `0.0` and `1.0`
+- direct-match rows use `rank_1` through `rank_4`
+- the `nlp` row does not use `rank_1` through `rank_4`
+
+Changing this file changes scoring behavior without editing Python code.
 
 ## Final Score Formula
 
@@ -28,18 +61,18 @@ final_score =
   (orgs_score      * orgs_weight) +
   (identity_score  * identity_weight) +
   (grad_year_score * grad_year_weight) +
-  (nlp_score       * 0.5)
+  (nlp_score       * nlp_weight)
 ```
 
 Where:
 
-- `nlp_weight` is always exactly `0.5`
-- the five direct-match weights together sum to at most `0.5`
+- `nlp_weight` comes from `scoring.csv`
+- the five direct-match weights together sum to at most `1 - nlp_weight`
 
 If the direct-match priorities all map to `0`, then:
 
 - all five direct-match weights become `0`
-- `nlp_weight` stays `0.5`
+- `nlp_weight` stays whatever is defined in `scoring.csv`
 - the unused direct-match half is intentionally left unused
 
 ## Component Scores
@@ -59,7 +92,9 @@ Higher is better in every case.
 
 Students rank each direct-match category from `1` to `4` for importance.
 
-These rankings are first converted to priority values with this mapping:
+These rankings are converted to priority values using `scoring.csv`.
+
+With the default `scoring.csv`, the mapping is:
 
 | Ranking | Priority value |
 | --- | ---: |
@@ -91,11 +126,11 @@ total_priority =
   grad_year_priority
 ```
 
-### Step 3: Reserve the score halves
+### Step 3: Reserve the score shares
 
 ```text
-nlp_weight = 0.5
-direct_match_share = 0.5
+nlp_weight = value from scoring.csv
+direct_match_share = 1.0 - nlp_weight
 ```
 
 ### Step 4: Split the direct-match half
@@ -103,7 +138,7 @@ direct_match_share = 0.5
 For each direct-match category:
 
 ```text
-direct_weight = 0.5 * (category_priority / total_priority)
+direct_weight = direct_match_share * (category_priority / total_priority)
 ```
 
 If `total_priority == 0`, then:
@@ -114,7 +149,7 @@ degree_weight = 0
 orgs_weight = 0
 identity_weight = 0
 grad_year_weight = 0
-nlp_weight = 0.5
+nlp_weight = value from scoring.csv
 ```
 
 ## Example
@@ -182,9 +217,12 @@ The displayed weight is the final scoring weight, shown as a percentage out of `
 
 Current scoring logic lives in:
 
+- `nlp_project/scoring.csv`
 - `nlp_project/mentor_matching/scoring.py`
+- `nlp_project/mentor_matching/scoring_config.py`
 - `nlp_project/mentor_matching/reporting.py`
 - `backend/api/models/mentee.py`
+- `backend/api/scoring_config.py`
 - `backend/api/matcher.py`
 
 ## Explain Run

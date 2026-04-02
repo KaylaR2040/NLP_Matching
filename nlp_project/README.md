@@ -36,6 +36,7 @@
 - `data/`: default sample CSVs
 - `state/`: persisted state JSON
 - `output/`: generated JSON/CSV output
+- `scoring.csv`: shared scoring config for direct-match priorities and NLP weight
 
 ## Run
 
@@ -59,8 +60,17 @@ python nlp_project2/main.py exclude --role mentor --user-id M002 --rerun
 python nlp_project2/main.py set-weight --scope global --factor industry --value 2.0 --rerun
 
 # Set mentee-specific weight and rerun
-python nlp_project2/main.py set-weight --scope mentee --mentee-id T001 --factor nlp --value 3.0 --rerun
+python nlp_project2/main.py set-weight --scope mentee --mentee-id T001 --factor identity --value 3.0 --rerun
 ```
+
+## Scoring Config
+
+[scoring.csv](/home/connor/ECE495_IndepStudy/Content/Code/nlp_project/scoring.csv) controls:
+
+- the priority value used for ranking `1`, `2`, `3`, and `4` for each direct-match section
+- the shared `nlp_weight` used by both the CLI pipeline and backend API matcher
+
+Update the `nlp` row in `scoring.csv` to change NLP's contribution to the final score.
 
 ## Output Files
 

@@ -1,0 +1,7 @@
+section,rank_1,rank_2,rank_3,rank_4,nlp_weight
+industry,0,11,44,100,
+degree,0,11,44,100,
+orgs,0,11,44,100,
+identity,0,11,44,100,
+grad_year,0,11,44,100,
+nlp,,,,,0.5
