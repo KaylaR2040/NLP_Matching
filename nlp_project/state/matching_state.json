@@ -3,8 +3,10 @@
   "excluded_mentee_ids": [],
   "excluded_mentor_ids": [],
   "rejected_pairs": [],
-  "locked_pairs": [],
+  "locked_pairs": [
+    "artala@ncsu.edu::mattpurvis2001@gmail.com"
+  ],
   "global_weights": {},
   "mentee_weight_overrides": {},
-  "run_count": 30
+  "run_count": 45
 }

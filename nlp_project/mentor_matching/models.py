@@ -82,6 +82,7 @@ class Mentee:
             part
             for part in [
                 self.education_level,
+                self.graduation_year,
                 " ".join(self.degree_programs),
             ]
             if part
@@ -169,6 +170,7 @@ class Mentor:
         return " ".join(
             part
             for part in [
+                self.graduation_year,
                 " ".join(self.degree_programs),
             ]
             if part
@@ -201,6 +203,7 @@ class PairScore:
     effective_weights: Dict[str, float]
     display_weights: Dict[str, float]
     match_score: float
+    match_band: str = ""
     locked: bool = False
 
     def to_dict(self) -> Dict[str, object]:
@@ -214,5 +217,6 @@ class PairScore:
             "display_weights": self.display_weights,
             "match_score": self.match_score,
             "match_percent": round(self.match_score * 100, 2),
+            "match_band": self.match_band,
             "locked": self.locked,
         }

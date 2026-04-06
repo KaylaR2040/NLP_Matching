@@ -8,7 +8,7 @@ import re
 import warnings
 from typing import Iterable, List, Sequence
 
-from .constants import DOMAIN_STOP_WORDS, STOP_WORDS
+from .constants import DOMAIN_STOP_WORDS
 
 
 MODEL_NAME = "all-mpnet-base-v2"
@@ -80,48 +80,13 @@ def _fallback_encode_text(text: str) -> List[float]:
     return _normalize(vector)
 
 
-def _canonicalize_degree_text(text: str) -> str:
-    """Normalize common degree abbreviations and synonyms for fuzzy matching."""
-    clean = (text or "").lower()
-    substitutions = (
-        (r"\bm\.?\s*s\.?\b", " master "),
-        (r"\bmasters?\b", " master "),
-        (r"\bmaster'?s\b", " master "),
-        (r"\bb\.?\s*s\.?\b", " bachelor "),
-        (r"\bbachelors?\b", " bachelor "),
-        (r"\bbachelor'?s\b", " bachelor "),
-        (r"\bph\.?\s*d\.?\b", " phd "),
-        (r"\bdoctorate\b", " phd "),
-        (r"\bdoctoral\b", " phd "),
-        (r"\bengg\b", " engineering "),
-        (r"\bengr\b", " engineering "),
-        (r"\bcomp\.?\s*eng\b", " computer engineering "),
-        (r"\belectrical\s*&\s*computer\s*engineering\b", " electrical computer engineering "),
-        (r"\bece\b", " electrical computer engineering "),
-        (r"\bcpe\b", " computer engineering "),
-    )
-    for pattern, replacement in substitutions:
-        clean = re.sub(pattern, replacement, clean)
-    return clean
-
-
-def _normalize_bucket_text(text: str, bucket: str = "generic") -> str:
-    """Normalize bucket text before semantic encoding."""
+def _normalize_bucket_text(text: str) -> str:
+    """Remove low-signal domain fillers before semantic encoding."""
     clean = (text or "").strip().lower()
     if not clean:
         return ""
-
-    if bucket == "degree":
-        clean = _canonicalize_degree_text(clean)
-
     tokens = re.findall(r"[a-z0-9]+", clean)
-
-    if bucket == "degree":
-        blocked = set(STOP_WORDS) | {"program", "programs", "degree", "degrees"}
-    else:
-        blocked = set(DOMAIN_STOP_WORDS)
-
-    filtered = [token for token in tokens if token not in blocked]
+    filtered = [token for token in tokens if token not in DOMAIN_STOP_WORDS]
     return " ".join(filtered) if filtered else clean
 
 
@@ -140,13 +105,13 @@ def _encode_with_model(texts: Sequence[str]) -> List[List[float]] | None:
 
 def get_vector(text: str) -> List[float]:
     """Encode one text string to a semantic embedding vector."""
-    vectors = bulk_encode([text or ""], bucket="generic")
+    vectors = bulk_encode([text or ""])
     return vectors[0] if vectors else []
 
 
-def bulk_encode(texts: Iterable[str], bucket: str = "generic") -> List[List[float]]:
+def bulk_encode(texts: Iterable[str]) -> List[List[float]]:
     """Encode text strings using semantic model with deterministic fallback."""
-    text_list = [_normalize_bucket_text(str(text or ""), bucket=bucket) for text in texts]
+    text_list = [_normalize_bucket_text(str(text or "")) for text in texts]
     if not text_list:
         return []
 
@@ -201,9 +166,9 @@ def attach_embeddings(people: Iterable[object]) -> None:
     degree_texts = [person.degree_profile_text() for person in participants]
     personality_texts = [person.personality_profile_text() for person in participants]
 
-    industry_vectors = bulk_encode(industry_texts, bucket="industry")
-    degree_vectors = bulk_encode(degree_texts, bucket="degree")
-    personality_vectors = bulk_encode(personality_texts, bucket="personality")
+    industry_vectors = bulk_encode(industry_texts)
+    degree_vectors = bulk_encode(degree_texts)
+    personality_vectors = bulk_encode(personality_texts)
 
     for person, industry_vec, degree_vec, personality_vec in zip(
         participants,

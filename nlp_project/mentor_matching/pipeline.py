@@ -78,7 +78,7 @@ class MatchingPipeline:
         )
 
         # Step 7: choose final assignments from the ranked pair list.
-        assignments = greedy_assign(ranked_pairs, locked_pairs)
+        assignments = greedy_assign(ranked_pairs, mentors, locked_pairs)
 
         summary = {
             "mentees_input": len(mentees),
@@ -124,6 +124,7 @@ def write_outputs(result: MatchingRunResult, output_dir: Path, top_n: int = 25) 
                 "mentor_name",
                 "match_score",
                 "match_percent",
+                "match_band",
                 "locked",
             ],
         )
@@ -138,6 +139,7 @@ def write_outputs(result: MatchingRunResult, output_dir: Path, top_n: int = 25) 
                     "mentor_name": row["mentor_name"],
                     "match_score": f"{row['match_score']:.6f}",
                     "match_percent": row["match_percent"],
+                    "match_band": row.get("match_band", ""),
                     "locked": row["locked"],
                 }
             )

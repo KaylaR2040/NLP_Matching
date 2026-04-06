@@ -64,7 +64,7 @@ def _run_pipeline(
         print_nlp_preview(result.mentees, "Mentee")
         print_nlp_preview(result.mentors, "Mentor")
 
-    print_run_summary(result, top_n=min(5, top_n))
+    print_run_summary(result, top_n=min(top_n, len(result.assignments)))
     print(f"\nState file: {state_path}")
     print(f"Output JSON: {output_dir / 'latest_matches.json'}")
     print(f"Output CSV : {output_dir / 'latest_assignments.csv'}")

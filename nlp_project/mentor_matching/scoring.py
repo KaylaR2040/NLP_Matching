@@ -3,21 +3,64 @@
 from __future__ import annotations
 
 import re
-from typing import Dict, Sequence, Set
+from typing import Dict, Sequence, Set, Tuple
 
-from .constants import DEFAULT_BASE_WEIGHTS, FACTOR_KEYS, IMPORTANCE_MULTIPLIER
+from .constants import (
+    CORE_MATCH_SHARE,
+    DEFAULT_BASE_WEIGHTS,
+    DEGREE_EXACT_MULTI_BONUS_CAP,
+    DEGREE_EXACT_MULTI_BONUS_STEP,
+    DEGREE_PARTIAL_MULTI_BONUS_CAP,
+    DEGREE_PARTIAL_MULTI_BONUS_STEP,
+    DEGREE_SEMANTIC_WEIGHT,
+    DEGREE_STRUCTURED_WEIGHT,
+    EXTRA_MATCH_SHARE,
+    FACTOR_KEYS,
+    IMPORTANCE_MULTIPLIER,
+    INDUSTRY_BROAD_WEIGHT,
+    INDUSTRY_HARD_FLOOR,
+    INDUSTRY_NICHE_WEIGHT,
+    LOW_INDUSTRY_PENALTY,
+    MATCH_BAND_DECENT,
+    MATCH_BAND_EXCEPTIONAL,
+    MATCH_BAND_POSSIBLE,
+    MATCH_BAND_STRONG,
+    SCORE_CURVE_EXPONENT,
+)
 from .embeddings import semantic_similarity
 from .models import Mentee, Mentor, PairScore
 from .state_store import MatchingState
 
 
-INDUSTRY_HARD_FLOOR = 0.30
-LOW_INDUSTRY_PENALTY = 0.50
 CORE_FACTORS = ("industry", "degree")
 EXTRA_FACTORS = ("personality", "identity", "orgs", "grad_year")
-CORE_MATCH_SHARE = 0.80
-EXTRA_MATCH_SHARE = 0.20
-SCORE_CURVE_EXPONENT = 0.85
+
+NICHE_TOKEN_WEIGHTS = {
+    "analog": 1.85,
+    "mixed_signal": 1.80,
+    "rf": 1.55,
+    "power_management_ic": 1.70,
+    "asic": 1.60,
+    "rtl": 1.55,
+    "fpga": 1.45,
+    "embedded_firmware": 1.35,
+    "power_systems": 1.20,
+    "signal_processing": 1.25,
+    "software": 0.85,
+    "robotics": 0.95,
+    "cyber": 1.00,
+}
+
+HIGH_INFORMATION_FAMILIES = {
+    "analog",
+    "mixed_signal",
+    "rf",
+    "power_management_ic",
+    "asic",
+    "rtl",
+    "fpga",
+    "embedded_firmware",
+}
 
 
 def _normalize_items(values: Sequence[str]) -> Set[str]:
@@ -67,6 +110,140 @@ def _safe_year(value: str) -> int | None:
         return None
 
 
+def _canonicalize_domain_token(token: str) -> str:
+    key = token.strip().lower()
+    groups = {
+        "analog": {"analog", "analogic"},
+        "mixed_signal": {"mixed", "mixedsignal", "mixedsignals", "ams", "ic", "ics"},
+        "rf": {"rf", "wireless", "antenna", "transceiver", "microwave", "mmwave"},
+        "power_management_ic": {"pmic", "powermanagement", "powermanagement", "regulator", "regulators"},
+        "asic": {"asic", "vlsi", "semiconductor", "silicon"},
+        "rtl": {"rtl", "verilog", "systemverilog", "hdl", "uvm"},
+        "fpga": {"fpga", "fpgas"},
+        "embedded_firmware": {"embedded", "firmware", "microcontroller", "baremetal", "rtos"},
+        "power_systems": {
+            "power",
+            "grid",
+            "energy",
+            "utility",
+            "utilities",
+            "renewable",
+            "rail",
+            "railway",
+            "infrastructure",
+            "transportation",
+        },
+        "ml_ai": {"ml", "ai", "machine", "learning", "neural", "llm"},
+        "software": {"software", "backend", "frontend", "fullstack", "app", "application", "web", "cloud"},
+        "signal_processing": {
+            "rf",
+            "signal",
+            "signals",
+            "communications",
+            "wireless",
+            "transceiver",
+            "sensing",
+            "sensor",
+            "dsp",
+            "filter",
+            "filters",
+        },
+        "robotics": {"robotics", "autonomy", "autonomous", "controls"},
+        "cyber": {"cybersecurity", "security", "infosec"},
+    }
+    for canonical, aliases in groups.items():
+        if key in aliases:
+            return canonical
+    return ""
+
+
+def _technical_token_set(values: Sequence[str]) -> Set[str]:
+    tokens: Set[str] = set()
+    blocked = {"and", "or", "the", "in", "of", "to", "for", "with", "by"}
+    for raw in values:
+        text = str(raw).lower()
+        # Avoid counting company names as false specialty hits.
+        text = text.replace("analog devices", "company_adi")
+        text = text.replace("advanced micro devices", "company_amd")
+        for token in re.findall(r"[a-z0-9]+", text):
+            if len(token) <= 1 or token in blocked:
+                continue
+            canonical = _canonicalize_domain_token(token)
+            if canonical:
+                tokens.add(canonical)
+    return tokens
+
+
+def _weighted_jaccard_similarity(set_a: Set[str], set_b: Set[str]) -> float:
+    if not set_a or not set_b:
+        return 0.0
+    union = set_a | set_b
+    if not union:
+        return 0.0
+    inter = set_a & set_b
+    numer = sum(NICHE_TOKEN_WEIGHTS.get(token, 1.0) for token in inter)
+    denom = sum(NICHE_TOKEN_WEIGHTS.get(token, 1.0) for token in union)
+    if denom <= 0.0:
+        return 0.0
+    return numer / denom
+
+
+def _industry_niche_similarity(mentee: Mentee, mentor: Mentor) -> tuple[float, bool, Set[str], Set[str]]:
+    mentee_terms = _technical_token_set(
+        list(mentee.interests)
+        + list(mentee.help_topics)
+        + [mentee.role, mentee.goals, mentee.background]
+    )
+    mentor_terms = _technical_token_set(
+        list(mentor.expertise)
+        + list(mentor.help_topics)
+        + list(mentor.domain_tags)
+        + [mentor.role, mentor.professional_experience, mentor.goals]
+    )
+    if not mentee_terms or not mentor_terms:
+        return 0.0, False, mentee_terms, mentor_terms
+    return _weighted_jaccard_similarity(mentee_terms, mentor_terms), True, mentee_terms, mentor_terms
+
+
+def _high_information_overlap_bonus(mentee_terms: Set[str], mentor_terms: Set[str]) -> float:
+    shared = (mentee_terms & mentor_terms) & HIGH_INFORMATION_FAMILIES
+    if not shared:
+        return 0.0
+
+    bonus = 0.0
+    if "analog" in shared:
+        bonus += 0.12
+    if "mixed_signal" in shared:
+        bonus += 0.10
+    if "rf" in shared:
+        bonus += 0.08
+    if "power_management_ic" in shared:
+        bonus += 0.06
+
+    bonus += 0.04 * max(0, len(shared) - 1)
+    return min(0.24, bonus)
+
+
+def _industry_similarity(mentee: Mentee, mentor: Mentor) -> float:
+    broad = semantic_similarity(mentee.industry_embedding, mentor.industry_embedding)
+    niche, niche_available, mentee_terms, mentor_terms = _industry_niche_similarity(mentee, mentor)
+
+    if not niche_available:
+        return broad
+
+    combined = (broad * INDUSTRY_BROAD_WEIGHT) + (niche * INDUSTRY_NICHE_WEIGHT)
+
+    # Niche alignment should separate technically close matches from broad-only matches.
+    if niche >= 0.70 and broad >= 0.50:
+        combined = min(1.0, combined + 0.05)
+    elif niche <= 0.10 and broad < 0.55:
+        combined *= 0.90
+
+    combined += _high_information_overlap_bonus(mentee_terms, mentor_terms)
+
+    return max(0.0, min(1.0, combined))
+
+
 def _canonicalize_degree_value(value: str) -> str:
     clean = (value or "").strip().lower()
     if not clean:
@@ -81,15 +258,35 @@ def _canonicalize_degree_value(value: str) -> str:
         (r"\bdoctor(?:al|ate)?\b", " phd "),
         (r"\belectrical\s*&\s*computer\s*engineering\b", " electrical computer engineering "),
         (r"\belectrical\s+and\s+computer\s+engineering\b", " electrical computer engineering "),
+        (r"\bundergraudate\b", " bs "),
+        (r"\bundergraduate\b", " bs "),
+        (r"\bundergrad\b", " bs "),
     )
 
     for pattern, replacement in substitutions:
         clean = re.sub(pattern, replacement, clean)
 
     clean = re.sub(r"[^a-z0-9]+", " ", clean)
-    blocked = {"degree", "degrees", "program", "programs", "major", "in", "of"}
-    tokens = [token for token in clean.split() if token and token not in blocked]
-    return " ".join(tokens)
+    blocked = {
+        "degree", "degrees", "program", "programs", "major", "in", "of",
+        "undergraduate", "graduate", "alumni", "university", "college",
+        "state", "ncsu", "from", "at",
+    }
+    tokens = []
+    for token in clean.split():
+        if not token or token in blocked:
+            continue
+        if token.isdigit():
+            continue
+        # Ignore year-like numeric fragments.
+        if re.fullmatch(r"\d{4}", token):
+            continue
+        tokens.append(token)
+    if not tokens:
+        return ""
+    # Order-insensitive signature: treats "MS Computer Engineering" the same as
+    # "Computer Engineering - M.S."
+    return " ".join(sorted(tokens))
 
 
 def _canonical_degree_set(values: Sequence[str]) -> Set[str]:
@@ -100,25 +297,163 @@ def _canonical_degree_set(values: Sequence[str]) -> Set[str]:
     }
 
 
-def _degree_similarity(mentee: Mentee, mentor: Mentor) -> float:
-    mentee_degrees = list(mentee.degree_programs)
-    if mentee.education_level:
-        mentee_degrees.append(mentee.education_level)
+def _degree_tokens(value: str) -> Set[str]:
+    canonical = _canonicalize_degree_value(value)
+    return {token for token in canonical.split() if token}
 
+
+def _canonical_level_token(raw_level: str) -> str:
+    tokens = _degree_tokens(raw_level)
+    for token in ("bs", "ms", "phd", "abm"):
+        if token in tokens:
+            return token
+    return ""
+
+
+def _mentee_degree_values(mentee: Mentee) -> List[str]:
+    values = [value for value in mentee.degree_programs if str(value).strip()]
+    level = _canonical_level_token(mentee.education_level or "")
+    if level:
+        has_level_already = any(level in _degree_tokens(value) for value in values)
+        if not has_level_already:
+            values.append(level.upper() if level != "phd" else "PhD")
+    return values
+
+
+def _participant_degree_features(values: Sequence[str]) -> tuple[Set[frozenset[str]], Set[frozenset[str]], Set[str]]:
+    degree_level_tokens = {"bs", "ms", "phd", "abm"}
+    signatures: Set[frozenset[str]] = set()
+    program_signatures: Set[frozenset[str]] = set()
+    level_tokens: Set[str] = set()
+
+    for value in values:
+        tokens = _degree_tokens(value)
+        if not tokens:
+            continue
+        signatures.add(frozenset(tokens))
+        level_tokens.update(token for token in tokens if token in degree_level_tokens)
+        program_tokens = {token for token in tokens if token not in degree_level_tokens}
+        if program_tokens:
+            program_signatures.add(frozenset(program_tokens))
+
+    return signatures, program_signatures, level_tokens
+
+
+def _degree_domain_families(tokens: Set[str]) -> Set[str]:
+    families: Set[str] = set()
+
+    electrical_aliases = {"electrical", "electronics", "power", "signal", "signals", "rf", "communications"}
+    computer_aliases = {"computer", "computing", "software", "cybersecurity", "networking", "data", "ai", "ml"}
+
+    if tokens & electrical_aliases:
+        families.add("electrical_track")
+    if tokens & computer_aliases:
+        families.add("computer_track")
+    if "engineering" in tokens and families:
+        families.add("ece_core")
+
+    if not families:
+        level_tokens = {"bs", "ms", "phd", "abm"}
+        ignored = {"engineering", "engineeringtrack", "track"}
+        families.update(token for token in tokens if token not in level_tokens and token not in ignored)
+
+    return families
+
+
+def _degree_entries(values: Sequence[str]) -> List[tuple[frozenset[str], frozenset[str]]]:
+    level_tokens = {"bs", "ms", "phd", "abm"}
+    entries: List[tuple[frozenset[str], frozenset[str]]] = []
+    for value in values:
+        tokens = _degree_tokens(value)
+        if not tokens:
+            continue
+        levels = frozenset(token for token in tokens if token in level_tokens)
+        domains = frozenset(_degree_domain_families(tokens))
+        entries.append((levels, domains))
+    return entries
+
+
+def _degree_entry_similarity(a: tuple[frozenset[str], frozenset[str]], b: tuple[frozenset[str], frozenset[str]]) -> float:
+    levels_a, domains_a = a
+    levels_b, domains_b = b
+
+    if domains_a and domains_b:
+        domain = len(domains_a & domains_b) / len(domains_a | domains_b)
+    else:
+        domain = 0.0
+
+    if levels_a and levels_b:
+        level = 1.0 if (levels_a & levels_b) else 0.55
+    else:
+        level = 0.90
+
+    return (0.75 * domain) + (0.25 * level)
+
+
+def _structured_degree_similarity(mentee_values: Sequence[str], mentor_values: Sequence[str]) -> tuple[float, int]:
+    mentee_entries = _degree_entries(mentee_values)
+    mentor_entries = _degree_entries(mentor_values)
+    if not mentee_entries or not mentor_entries:
+        return 0.0, 0
+
+    best_mentee = [max(_degree_entry_similarity(entry, candidate) for candidate in mentor_entries) for entry in mentee_entries]
+    best_mentor = [max(_degree_entry_similarity(entry, candidate) for candidate in mentee_entries) for entry in mentor_entries]
+    merged = best_mentee + best_mentor
+    score = sum(merged) / float(len(merged))
+    strong_matches = sum(1 for value in merged if value >= 0.80)
+    return score, strong_matches
+
+
+def _degree_similarity_details(mentee: Mentee, mentor: Mentor) -> tuple[float, int]:
+    mentee_degrees = _mentee_degree_values(mentee)
     mentor_degrees = list(mentor.degree_programs)
     canonical_mentee = _canonical_degree_set(mentee_degrees)
     canonical_mentor = _canonical_degree_set(mentor_degrees)
+    mentee_signatures, mentee_program_signatures, mentee_levels = _participant_degree_features(mentee_degrees)
+    mentor_signatures, mentor_program_signatures, mentor_levels = _participant_degree_features(mentor_degrees)
+    structured_score, structured_strong_matches = _structured_degree_similarity(mentee_degrees, mentor_degrees)
 
+    exact_overlap_count = len(canonical_mentee & canonical_mentor)
     if canonical_mentee and canonical_mentor and (canonical_mentee & canonical_mentor):
         # User expectation: if a canonical exact degree overlap exists, this factor is full match.
-        return 1.0
+        return 1.0, exact_overlap_count
+
+    signature_overlap_count = len(mentee_signatures & mentor_signatures)
+    if mentee_signatures and mentor_signatures and (mentee_signatures & mentor_signatures):
+        return 1.0, signature_overlap_count
+
+    # Also treat program-level overlap + same degree-level overlap as exact.
+    program_overlap_count = len(mentee_program_signatures & mentor_program_signatures)
+    if mentee_program_signatures and mentor_program_signatures and (mentee_program_signatures & mentor_program_signatures):
+        # If one side omitted degree level but program matches exactly, treat as exact.
+        if (not mentee_levels) or (not mentor_levels) or (mentee_levels & mentor_levels):
+            return 1.0, program_overlap_count
 
     semantic = semantic_similarity(mentee.degree_embedding, mentor.degree_embedding)
+    combined = (semantic * DEGREE_SEMANTIC_WEIGHT) + (structured_score * DEGREE_STRUCTURED_WEIGHT)
+
+    structured_floor = structured_score * 0.90
     if not canonical_mentee or not canonical_mentor:
-        return semantic
+        return max(semantic, combined, structured_floor), structured_strong_matches
 
     exact = len(canonical_mentee & canonical_mentor) / len(canonical_mentee | canonical_mentor)
-    return max(semantic, exact)
+    return max(semantic, exact, combined, structured_floor), structured_strong_matches
+
+
+def _degree_match_bonus(overlap_count: int, degree_score: float) -> float:
+    """
+    Small boost when multiple degree entries align.
+
+    One exact degree match already yields degree score 1.0.
+    Extra aligned degrees add a bounded pair-level bonus.
+    """
+    if overlap_count <= 1:
+        return 0.0
+    if degree_score >= 1.0:
+        return min(DEGREE_EXACT_MULTI_BONUS_CAP, DEGREE_EXACT_MULTI_BONUS_STEP * float(overlap_count - 1))
+    if degree_score >= 0.75:
+        return min(DEGREE_PARTIAL_MULTI_BONUS_CAP, DEGREE_PARTIAL_MULTI_BONUS_STEP * float(overlap_count - 1))
+    return 0.0
 
 
 def _has_vector_signal(vector: Sequence[float]) -> bool:
@@ -126,9 +461,13 @@ def _has_vector_signal(vector: Sequence[float]) -> bool:
 
 
 def _active_factor_flags(mentee: Mentee, mentor: Mentor) -> Dict[str, bool]:
+    _, niche_available, _, _ = _industry_niche_similarity(mentee, mentor)
+    mentee_degrees = _mentee_degree_values(mentee)
     return {
-        "industry": _has_vector_signal(mentee.industry_embedding) and _has_vector_signal(mentor.industry_embedding),
-        "degree": bool(_canonical_degree_set(list(mentee.degree_programs) + ([mentee.education_level] if mentee.education_level else [])))
+        "industry": (
+            _has_vector_signal(mentee.industry_embedding) and _has_vector_signal(mentor.industry_embedding)
+        ) or niche_available,
+        "degree": bool(_canonical_degree_set(mentee_degrees))
         and bool(_canonical_degree_set(mentor.degree_programs)),
         "personality": _has_vector_signal(mentee.personality_embedding) and _has_vector_signal(mentor.personality_embedding),
         "identity": bool((mentee.pronouns or "").strip()) and bool((mentor.pronouns or "").strip()),
@@ -225,9 +564,10 @@ def score_pair(mentee: Mentee, mentor: Mentor, state: MatchingState) -> PairScor
     """
     Score one mentor-mentee pair using segmented semantic vectors + direct factors.
     """
+    degree_score, degree_overlap_count = _degree_similarity_details(mentee, mentor)
     component_scores = {
-        "industry": semantic_similarity(mentee.industry_embedding, mentor.industry_embedding),
-        "degree": _degree_similarity(mentee, mentor),
+        "industry": _industry_similarity(mentee, mentor),
+        "degree": degree_score,
         "personality": semantic_similarity(mentee.personality_embedding, mentor.personality_embedding),
         "identity": _identity_similarity(mentee, mentor),
         "orgs": jaccard_similarity(mentee.student_orgs, mentor.student_orgs),
@@ -257,11 +597,25 @@ def score_pair(mentee: Mentee, mentor: Mentor, state: MatchingState) -> PairScor
     if active_flags.get("industry", False) and component_scores["industry"] < INDUSTRY_HARD_FLOOR:
         match_score *= LOW_INDUSTRY_PENALTY
 
+    if degree_overlap_count > 1:
+        match_score += _degree_match_bonus(degree_overlap_count, component_scores["degree"])
+
     if match_score > 0.0:
         match_score = match_score ** SCORE_CURVE_EXPONENT
     match_score = max(0.0, min(1.0, match_score))
 
     display_weights = effective_weights
+    match_percent = match_score * 100.0
+    if match_percent >= MATCH_BAND_EXCEPTIONAL:
+        match_band = "exceptional"
+    elif match_percent >= MATCH_BAND_STRONG:
+        match_band = "strong"
+    elif match_percent >= MATCH_BAND_DECENT:
+        match_band = "decent"
+    elif match_percent >= MATCH_BAND_POSSIBLE:
+        match_band = "possible"
+    else:
+        match_band = "weak"
 
     return PairScore(
         mentee_id=mentee.mentee_id,
@@ -272,4 +626,5 @@ def score_pair(mentee: Mentee, mentor: Mentor, state: MatchingState) -> PairScor
         effective_weights=effective_weights,
         display_weights=display_weights,
         match_score=match_score,
+        match_band=match_band,
     )

@@ -182,11 +182,15 @@ def _mentor_capacity(payload: Dict[str, Any], row: Dict[str, str]) -> int:
 def _mentor_degree_programs(payload: Dict[str, Any], row: Dict[str, str]) -> List[str]:
     degrees = payload.get("degrees")
     if isinstance(degrees, list):
-        programs = [
-            _clean(entry.get("program"))
-            for entry in degrees
-            if isinstance(entry, dict) and _clean(entry.get("program"))
-        ]
+        programs: List[str] = []
+        for entry in degrees:
+            if not isinstance(entry, dict):
+                continue
+            level = _clean(entry.get("level"))
+            program = _clean(entry.get("program"))
+            combined = " ".join(part for part in (level, program) if part).strip()
+            if combined:
+                programs.append(combined)
         if programs:
             return programs
     return _split_multi_value(_first_present(row, ("degrees", "degreessummary")))

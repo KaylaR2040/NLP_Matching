@@ -35,12 +35,17 @@ def build_ranked_pairs(
 
 def greedy_assign(
     ranked_pairs: Sequence[PairScore],
+    mentors: Sequence[Mentor],
     locked_pairs: Set[PairKey],
 ) -> List[PairScore]:
-    """One-to-one assignment with locked pairs applied first."""
+    """Capacity-aware assignment with locked pairs applied first."""
     assigned_mentees: Set[str] = set()
-    assigned_mentors: Set[str] = set()
     assignments: List[PairScore] = []
+    mentor_capacity: Dict[str, int] = {
+        mentor.mentor_id: max(1, int(mentor.max_mentees))
+        for mentor in mentors
+    }
+    mentor_load: Dict[str, int] = {mentor_id: 0 for mentor_id in mentor_capacity}
 
     lookup: Dict[PairKey, PairScore] = {
         (pair.mentee_id, pair.mentor_id): pair
@@ -51,17 +56,25 @@ def greedy_assign(
         if locked_pair not in lookup:
             continue
         locked_score = replace(lookup[locked_pair], locked=True)
-        if locked_score.mentee_id in assigned_mentees or locked_score.mentor_id in assigned_mentors:
+        if locked_score.mentee_id in assigned_mentees:
+            continue
+        if locked_score.mentor_id not in mentor_capacity:
+            continue
+        if mentor_load[locked_score.mentor_id] >= mentor_capacity[locked_score.mentor_id]:
             continue
         assignments.append(locked_score)
         assigned_mentees.add(locked_score.mentee_id)
-        assigned_mentors.add(locked_score.mentor_id)
+        mentor_load[locked_score.mentor_id] += 1
 
     for pair in ranked_pairs:
-        if pair.mentee_id in assigned_mentees or pair.mentor_id in assigned_mentors:
+        if pair.mentee_id in assigned_mentees:
+            continue
+        if pair.mentor_id not in mentor_capacity:
+            continue
+        if mentor_load[pair.mentor_id] >= mentor_capacity[pair.mentor_id]:
             continue
         assignments.append(pair)
         assigned_mentees.add(pair.mentee_id)
-        assigned_mentors.add(pair.mentor_id)
+        mentor_load[pair.mentor_id] += 1
 
     return assignments

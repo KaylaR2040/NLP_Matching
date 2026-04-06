@@ -36,7 +36,8 @@ def print_run_summary(result: MatchingRunResult, top_n: int = 5) -> None:
 
 def _print_pair(index: int, pair: PairScore) -> None:
     print(f"\n#{index} {pair.mentee_name} ({pair.mentee_id}) -> {pair.mentor_name} ({pair.mentor_id})")
-    print(f"  Match: {pair.match_score * 100:.2f}%")
+    band = f" [{pair.match_band}]" if pair.match_band else ""
+    print(f"  Match: {pair.match_score * 100:.2f}%{band}")
     for key, value in pair.component_scores.items():
         print(f"  - {key:<12} score={value:.3f} weight={format_weight_percent(pair.display_weights, key)}")
 
