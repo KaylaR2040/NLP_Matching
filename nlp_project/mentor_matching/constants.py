@@ -1,17 +1,18 @@
 """Shared constants for mentor-mentee matching."""
 
-FACTOR_KEYS = ("industry", "degree", "orgs", "identity", "grad_year", "nlp")
+FACTOR_KEYS = ("industry", "degree", "personality", "identity", "orgs", "grad_year")
 
 DEFAULT_BASE_WEIGHTS = {
-    "industry": 2.0,
+    "industry": 2.5,
     "degree": 2.0,
-    "orgs": 2.0,
-    "identity": 2.0,
-    "grad_year": 2.0,
-    "nlp": 2.0,
+    "personality": 1.5,
+    "identity": 1.0,
+    "orgs": 1.0,
+    "grad_year": 1.0,
 }
 
-MIN_WEIGHT = 0.05
+IMPORTANCE_MULTIPLIER = 2.0
+MIN_WEIGHT = 0.01
 
 STOP_WORDS = {
     "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "has", "have",

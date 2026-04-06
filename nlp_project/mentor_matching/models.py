@@ -37,7 +37,11 @@ class Mentee:
     source_mentor_id: str = ""
     source_row_index: Optional[int] = None
     ranking_weights: Dict[str, float] = field(default_factory=dict)
+    ranking_preferences: Dict[str, int] = field(default_factory=dict)
     nlp: ParticipantNLP = field(default_factory=ParticipantNLP)
+    industry_embedding: List[float] = field(default_factory=list)
+    degree_embedding: List[float] = field(default_factory=list)
+    personality_embedding: List[float] = field(default_factory=list)
     embedding: List[float] = field(default_factory=list)
 
     def profile_text(self) -> str:
@@ -54,6 +58,43 @@ class Mentee:
                 " ".join(self.student_orgs),
                 " ".join(self.interests),
                 " ".join(self.help_topics),
+            ]
+            if part
+        ).strip()
+
+    def industry_profile_text(self) -> str:
+        """Technical/professional bucket for semantic vetting."""
+        return " ".join(
+            part
+            for part in [
+                self.role,
+                self.goals,
+                self.background,
+                " ".join(self.interests),
+                " ".join(self.help_topics),
+            ]
+            if part
+        ).strip()
+
+    def degree_profile_text(self) -> str:
+        """Academic bucket used for major/degree alignment."""
+        return " ".join(
+            part
+            for part in [
+                self.education_level,
+                " ".join(self.degree_programs),
+            ]
+            if part
+        ).strip()
+
+    def personality_profile_text(self) -> str:
+        """Personal bucket used for style/hobby alignment."""
+        return " ".join(
+            part
+            for part in [
+                self.background,
+                " ".join(self.student_orgs),
+                " ".join(self.interests),
             ]
             if part
         ).strip()
@@ -82,6 +123,9 @@ class Mentor:
     domain_tags: List[str] = field(default_factory=list)
     source_row_index: Optional[int] = None
     nlp: ParticipantNLP = field(default_factory=ParticipantNLP)
+    industry_embedding: List[float] = field(default_factory=list)
+    degree_embedding: List[float] = field(default_factory=list)
+    personality_embedding: List[float] = field(default_factory=list)
     embedding: List[float] = field(default_factory=list)
 
     def profile_text(self) -> str:
@@ -101,6 +145,45 @@ class Mentor:
                 " ".join(self.help_topics),
                 " ".join(self.personal_interests),
                 " ".join(self.domain_tags),
+            ]
+            if part
+        ).strip()
+
+    def industry_profile_text(self) -> str:
+        """Technical/professional bucket for semantic vetting."""
+        return " ".join(
+            part
+            for part in [
+                self.role,
+                self.professional_experience,
+                self.goals,
+                " ".join(self.expertise),
+                " ".join(self.help_topics),
+                " ".join(self.domain_tags),
+            ]
+            if part
+        ).strip()
+
+    def degree_profile_text(self) -> str:
+        """Academic bucket used for major/degree alignment."""
+        return " ".join(
+            part
+            for part in [
+                " ".join(self.degree_programs),
+            ]
+            if part
+        ).strip()
+
+    def personality_profile_text(self) -> str:
+        """Personal bucket used for style/hobby alignment."""
+        return " ".join(
+            part
+            for part in [
+                self.bio,
+                self.prior_mentoring_experience,
+                self.mentorship_motivation,
+                " ".join(self.personal_interests),
+                " ".join(self.student_orgs),
             ]
             if part
         ).strip()

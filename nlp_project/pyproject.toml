@@ -8,7 +8,10 @@ version = "0.1.0"
 description = "Mentor-mentee matching pipeline with rerunnable state"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "sentence-transformers>=2.7.0",
+    "torch>=2.2.0",
+]
 
 [tool.setuptools]
 packages = ["mentor_matching"]

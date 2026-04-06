@@ -48,7 +48,7 @@ def _run_pipeline(
     # Main flow:
     # 1) load persisted rerun state
     # 2) parse mentee + mentor CSV inputs
-    # 3) build NLP features and deterministic embeddings
+    # 3) build NLP features and segmented semantic embeddings
     # 4) score every mentor/mentee pair
     # 5) assign final matches and write outputs
     state = load_state(state_path)

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Dict
 
 
-DIRECT_MATCH_FACTORS = ("industry", "degree", "orgs", "identity", "grad_year")
+DIRECT_MATCH_FACTORS = ("industry", "degree", "personality", "orgs", "identity", "grad_year")
 DEFAULT_SCORING_CSV = Path(__file__).resolve().parents[1] / "scoring.csv"
 
 _CACHE_KEY: tuple[int, int] | None = None

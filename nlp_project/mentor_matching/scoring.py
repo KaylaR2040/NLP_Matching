@@ -2,39 +2,20 @@
 
 from __future__ import annotations
 
-import re
-from typing import Dict, Iterable, List, Sequence, Set
+from typing import Dict, Sequence, Set
 
-from .constants import DEFAULT_BASE_WEIGHTS, DOMAIN_STOP_WORDS, FACTOR_KEYS, STOP_WORDS
-from .embeddings import cosine_similarity
+from .constants import DEFAULT_BASE_WEIGHTS, FACTOR_KEYS, IMPORTANCE_MULTIPLIER
+from .embeddings import semantic_similarity
 from .models import Mentee, Mentor, PairScore
-from .scoring_config import DIRECT_MATCH_FACTORS, load_scoring_config
 from .state_store import MatchingState
 
-NLP_FACTOR = "nlp"
+
+INDUSTRY_HARD_FLOOR = 0.30
+LOW_INDUSTRY_PENALTY = 0.50
 
 
 def _normalize_items(values: Sequence[str]) -> Set[str]:
     return {str(value).strip().lower() for value in values if str(value).strip()}
-
-
-def _tokenize_values(values: Sequence[str], extra_stop_words: Set[str] | None = None) -> Set[str]:
-    blocked = set(STOP_WORDS) | set(DOMAIN_STOP_WORDS)
-    if extra_stop_words:
-        blocked |= {token.lower() for token in extra_stop_words}
-
-    tokens: Set[str] = set()
-    for value in values:
-        text = str(value).strip().lower()
-        if not text:
-            continue
-        text = text.replace("&", " and ")
-        text = re.sub(r"\bother:\s*", "", text)
-        for token in re.findall(r"[a-z0-9]+", text):
-            if len(token) <= 1 or token in blocked:
-                continue
-            tokens.add(token)
-    return tokens
 
 
 def jaccard_similarity(values_a: Sequence[str], values_b: Sequence[str]) -> float:
@@ -43,128 +24,15 @@ def jaccard_similarity(values_a: Sequence[str], values_b: Sequence[str]) -> floa
     set_b = _normalize_items(values_b)
     if not set_a and not set_b:
         return 0.0
-    return len(set_a & set_b) / len(set_a | set_b)
-
-
-def _token_overlap_similarity(
-    values_a: Sequence[str],
-    values_b: Sequence[str],
-    *,
-    extra_stop_words: Set[str] | None = None,
-) -> float:
-    tokens_a = _tokenize_values(values_a, extra_stop_words=extra_stop_words)
-    tokens_b = _tokenize_values(values_b, extra_stop_words=extra_stop_words)
-    if not tokens_a or not tokens_b:
+    if not set_a or not set_b:
         return 0.0
-    return len(tokens_a & tokens_b) / len(tokens_a | tokens_b)
-
-
-def _hybrid_list_similarity(
-    values_a: Sequence[str],
-    values_b: Sequence[str],
-    *,
-    extra_stop_words: Set[str] | None = None,
-) -> float:
-    exact = jaccard_similarity(values_a, values_b)
-    token = _token_overlap_similarity(values_a, values_b, extra_stop_words=extra_stop_words)
-    return max(exact, token)
-
-
-def ranking_to_priority_value(value: float, factor: str) -> float:
-    """Convert a 1..4 importance ranking into its configured direct-match priority."""
-    config = load_scoring_config()
-    try:
-        ranking = int(round(float(value)))
-    except (TypeError, ValueError):
-        ranking = int(DEFAULT_BASE_WEIGHTS["industry"])
-    ranking = min(4, max(1, ranking))
-    return config.priorities_by_factor[factor][ranking]
-
-
-def _build_raw_rankings(mentee: Mentee, state: MatchingState) -> Dict[str, float]:
-    """Build raw factor rankings from defaults, mentee selections, and overrides."""
-    raw = dict(DEFAULT_BASE_WEIGHTS)
-
-    for factor, value in state.global_weights.items():
-        if factor in raw:
-            raw[factor] = float(value)
-
-    for factor, value in (mentee.ranking_weights or {}).items():
-        if factor in raw:
-            raw[factor] = float(value)
-
-    for factor, value in state.mentee_weight_overrides.get(mentee.mentee_id, {}).items():
-        if factor in raw:
-            raw[factor] = float(value)
-
-    return {factor: float(raw.get(factor, DEFAULT_BASE_WEIGHTS[factor])) for factor in FACTOR_KEYS}
-
-
-def calculate_direct_match_weights(rankings: Dict[str, float]) -> Dict[str, float]:
-    """
-    Allocate the non-NLP share of the final score across the five direct factors.
-
-    If every direct ranking maps to zero priority, the direct half is intentionally left
-    unused so the configured NLP share remains unchanged.
-    """
-    config = load_scoring_config()
-    direct_match_share = 1.0 - config.nlp_weight
-    priorities = {
-        factor: ranking_to_priority_value(rankings.get(factor, DEFAULT_BASE_WEIGHTS[factor]), factor)
-        for factor in DIRECT_MATCH_FACTORS
-    }
-    total_priority = sum(priorities.values())
-
-    if total_priority == 0 or direct_match_share <= 0.0:
-        return {factor: 0.0 for factor in DIRECT_MATCH_FACTORS}
-
-    return {
-        factor: direct_match_share * (priorities[factor] / total_priority)
-        for factor in DIRECT_MATCH_FACTORS
-    }
-
-
-def compute_effective_weights(mentee: Mentee, state: MatchingState) -> Dict[str, float]:
-    """
-    Build final factor weights from ``scoring.csv``:
-    - NLP contributes the configured ``nlp_weight``
-    - direct-match factors divide the remaining share by configured priorities
-    """
-    config = load_scoring_config()
-    rankings = _build_raw_rankings(mentee, state)
-    weights = {factor: 0.0 for factor in FACTOR_KEYS}
-    weights.update(calculate_direct_match_weights(rankings))
-    weights[NLP_FACTOR] = config.nlp_weight
-    return weights
-
-
-def compute_display_weights(mentee: Mentee, state: MatchingState) -> Dict[str, float]:
-    """Return final scoring weights for reporting as fractions of 1.0."""
-    return compute_effective_weights(mentee, state)
-
-
-def _industry_similarity(mentee: Mentee, mentor: Mentor) -> float:
-    mentee_values = list(mentee.interests) + list(mentee.help_topics)
-    mentor_values = list(mentor.expertise) + list(mentor.domain_tags)
-    return _hybrid_list_similarity(mentee_values, mentor_values)
-
-
-def _degree_similarity(mentee: Mentee, mentor: Mentor) -> float:
-    return _hybrid_list_similarity(mentee.degree_programs, mentor.degree_programs)
-
-
-def _orgs_similarity(mentee: Mentee, mentor: Mentor) -> float:
-    return _hybrid_list_similarity(
-        mentee.student_orgs,
-        mentor.student_orgs,
-        extra_stop_words={"pack", "university", "state", "club", "team", "lab"},
-    )
+    return len(set_a & set_b) / len(set_a | set_b)
 
 
 def _identity_similarity(mentee: Mentee, mentor: Mentor) -> float:
     if not mentee.pronouns or not mentor.pronouns:
-        return 0.5
-    return 1.0 if mentee.pronouns.strip().lower() == mentor.pronouns.strip().lower() else 0.2
+        return 0.0
+    return 1.0 if mentee.pronouns.strip().lower() == mentor.pronouns.strip().lower() else 0.0
 
 
 def _grad_year_similarity(mentee: Mentee, mentor: Mentor) -> float:
@@ -186,30 +54,71 @@ def _grad_year_similarity(mentee: Mentee, mentor: Mentor) -> float:
     return 0.05
 
 
-def _nlp_similarity(mentee: Mentee, mentor: Mentor) -> float:
-    # This is the final NLP score used in pair scoring.
-    # It compares the deterministic embeddings built in pipeline step 4.
-    return cosine_similarity(mentee.embedding, mentor.embedding)
+def _rank_multiplier(rank: int) -> float:
+    normalized = min(4, max(1, int(rank)))
+    if normalized >= 4:
+        return IMPORTANCE_MULTIPLIER
+    if normalized == 3:
+        return 1.5
+    if normalized == 2:
+        return 1.0
+    return 0.5
+
+
+def _resolve_factor_rank(mentee: Mentee, state: MatchingState, factor: str) -> int:
+    rank = int((mentee.ranking_preferences or {}).get(factor, 2))
+
+    if factor in state.global_weights:
+        rank = int(round(float(state.global_weights[factor])))
+
+    mentee_override = state.mentee_weight_overrides.get(mentee.mentee_id, {})
+    if factor in mentee_override:
+        rank = int(round(float(mentee_override[factor])))
+
+    return min(4, max(1, rank))
+
+
+def compute_effective_weights(mentee: Mentee, state: MatchingState) -> Dict[str, float]:
+    """Build non-normalized factor weights for this mentee."""
+    weights: Dict[str, float] = {}
+    for factor in FACTOR_KEYS:
+        base_weight = float(DEFAULT_BASE_WEIGHTS.get(factor, 1.0))
+        rank = _resolve_factor_rank(mentee, state, factor)
+        weights[factor] = base_weight * _rank_multiplier(rank)
+    return weights
+
+
+def compute_display_weights(mentee: Mentee, state: MatchingState) -> Dict[str, float]:
+    """Return weights normalized to fractions that sum to 1.0."""
+    effective = compute_effective_weights(mentee, state)
+    total = sum(effective.values())
+    if total <= 0.0:
+        return {factor: 0.0 for factor in FACTOR_KEYS}
+    return {factor: effective[factor] / total for factor in FACTOR_KEYS}
 
 
 def score_pair(mentee: Mentee, mentor: Mentor, state: MatchingState) -> PairScore:
     """
-    Score one mentor-mentee pair with weighted factor aggregation.
-
-    This corresponds to pipeline step 6 in ``MatchingPipeline.run``.
+    Score one mentor-mentee pair using segmented semantic vectors + direct factors.
     """
     component_scores = {
-        "industry": _industry_similarity(mentee, mentor),
-        "degree": _degree_similarity(mentee, mentor),
-        "orgs": _orgs_similarity(mentee, mentor),
+        "industry": semantic_similarity(mentee.industry_embedding, mentor.industry_embedding),
+        "degree": semantic_similarity(mentee.degree_embedding, mentor.degree_embedding),
+        "personality": semantic_similarity(mentee.personality_embedding, mentor.personality_embedding),
         "identity": _identity_similarity(mentee, mentor),
+        "orgs": jaccard_similarity(mentee.student_orgs, mentor.student_orgs),
         "grad_year": _grad_year_similarity(mentee, mentor),
-        "nlp": _nlp_similarity(mentee, mentor),
     }
 
-    weights = compute_effective_weights(mentee, state)
+    effective_weights = compute_effective_weights(mentee, state)
+    weighted_sum = sum(component_scores[factor] * effective_weights[factor] for factor in FACTOR_KEYS)
+    total_weight = sum(effective_weights.values())
+    match_score = (weighted_sum / total_weight) if total_weight else 0.0
+
+    if component_scores["industry"] < INDUSTRY_HARD_FLOOR:
+        match_score *= LOW_INDUSTRY_PENALTY
+
     display_weights = compute_display_weights(mentee, state)
-    match_score = sum(component_scores[key] * weights[key] for key in FACTOR_KEYS)
 
     return PairScore(
         mentee_id=mentee.mentee_id,
@@ -217,7 +126,7 @@ def score_pair(mentee: Mentee, mentor: Mentor, state: MatchingState) -> PairScor
         mentor_id=mentor.mentor_id,
         mentor_name=mentor.name,
         component_scores=component_scores,
-        effective_weights=weights,
+        effective_weights=effective_weights,
         display_weights=display_weights,
         match_score=match_score,
     )

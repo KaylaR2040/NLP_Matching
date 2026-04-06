@@ -10,7 +10,6 @@ from typing import Any, Dict, Iterable, List, Sequence
 
 from .constants import DEFAULT_BASE_WEIGHTS
 from .models import Mentee, Mentor
-from .scoring_config import DIRECT_MATCH_FACTORS
 
 
 def _clean(value: object) -> str:
@@ -40,14 +39,14 @@ def _safe_int(raw: str) -> int | None:
         return None
 
 
-def _safe_priority_weight(raw: str, default: float = 2.0) -> float:
+def _safe_priority_rank(raw: str, default: int = 2) -> int:
     if not _clean(raw):
         return default
     try:
-        value = float(raw)
+        value = int(round(float(raw)))
     except ValueError:
         return default
-    return min(4.0, max(1.0, value))
+    return min(4, max(1, value))
 
 
 def _ranking_aliases() -> Dict[str, Sequence[str]]:
@@ -102,11 +101,15 @@ def _ranking_aliases() -> Dict[str, Sequence[str]]:
             "matchbygradyears",
             "matchByGradYears",
         ),
-        "nlp": (
-            "rank_nlp",
-            "weight_nlp",
-            "nlp_rank",
-            "nlp_weight",
+        "personality": (
+            "rank_personality",
+            "weight_personality",
+            "personality_rank",
+            "personality_weight",
+            "match by personality",
+            "matching by personality",
+            "matchbypersonality",
+            "matchByPersonality",
         ),
     }
 
@@ -204,23 +207,30 @@ def _mentor_graduation_year(payload: Dict[str, Any], row: Dict[str, str]) -> str
     return match.group(1) if match else ""
 
 
-def _extract_ranking_weights(row: Dict[str, str]) -> Dict[str, float]:
+def _extract_ranking_preferences(row: Dict[str, str]) -> Dict[str, int]:
     normalized = _normalize_headers(row)
     embedded_json = _parse_embedded_json(row)
     normalized.update({key: str(value) for key, value in embedded_json.items() if not isinstance(value, (dict, list))})
     alias_map = _ranking_aliases()
-    output: Dict[str, float] = {}
+    output: Dict[str, int] = {}
 
-    for factor in DIRECT_MATCH_FACTORS:
+    for factor in DEFAULT_BASE_WEIGHTS:
         aliases = alias_map.get(factor, ())
         extracted = ""
         for alias in aliases:
             if alias in normalized and _clean(normalized[alias]):
                 extracted = normalized[alias]
                 break
-        output[factor] = _safe_priority_weight(extracted, default=DEFAULT_BASE_WEIGHTS[factor])
+        output[factor] = _safe_priority_rank(extracted, default=2)
 
     return output
+
+
+def _extract_ranking_weights(row: Dict[str, str]) -> Dict[str, float]:
+    return {
+        factor: float(value)
+        for factor, value in _extract_ranking_preferences(row).items()
+    }
 
 
 def parse_mentee_csv(path: str | Path) -> List[Mentee]:
@@ -238,7 +248,8 @@ def parse_mentee_csv(path: str | Path) -> List[Mentee]:
                 Mentee(
                     mentee_id=_json_str(embedded_json, "email", "id", "submissionId")
                     or _first_present(clean_row, ("mentee_id", "id", "email")),
-                    name=" ".join(part for part in (first_name, last_name) if part).strip(),
+                    name=" ".join(part for part in (first_name, last_name) if part).strip()
+                    or _first_present(clean_row, ("mentee_name", "name", "full name")),
                     role=_json_str(embedded_json, "experienceLevel")
                     or _first_present(clean_row, ("role", "program", "title", "experience level")),
                     pronouns=_json_str(embedded_json, "pronounsText", "pronouns")
@@ -263,6 +274,7 @@ def parse_mentee_csv(path: str | Path) -> List[Mentee]:
                     or _first_present(clean_row, ("about yourself", "background", "bio", "about")),
                     source_mentor_id=_first_present(clean_row, ("source_mentor_id",)),
                     source_row_index=_safe_int(_first_present(clean_row, ("source_row_index",))),
+                    ranking_preferences=_extract_ranking_preferences(clean_row),
                     ranking_weights=_extract_ranking_weights(clean_row),
                 )
             )
@@ -285,7 +297,8 @@ def parse_mentor_csv(path: str | Path) -> List[Mentor]:
                 Mentor(
                     mentor_id=_json_str(embedded_json, "email", "id", "submissionId")
                     or _first_present(clean_row, ("mentor_id", "id", "email")),
-                    name=" ".join(part for part in (first_name, last_name) if part).strip(),
+                    name=" ".join(part for part in (first_name, last_name) if part).strip()
+                    or _first_present(clean_row, ("mentor_name", "name", "full name")),
                     role=_json_str(embedded_json, "currentJobTitle")
                     or _first_present(clean_row, ("current job title", "role", "title")),
                     pronouns=_json_str(embedded_json, "pronouns")
@@ -309,7 +322,8 @@ def parse_mentor_csv(path: str | Path) -> List[Mentor]:
                     professional_experience=_json_str(embedded_json, "professionalExperience")
                     or _first_present(clean_row, ("professional experience",)),
                     personal_interests=_split_multi_value(
-                        _json_str(embedded_json, "aboutYourself") or _first_present(clean_row, ("about yourself",))
+                        _json_str(embedded_json, "aboutYourself")
+                        or _first_present(clean_row, ("personal interests", "hobbies", "interests", "about yourself"))
                     ),
                     domain_tags=_split_multi_value(_first_present(clean_row, ("current company", "current state", "current city"))),
                     source_row_index=_safe_int(_first_present(clean_row, ("source_row_index",))),

@@ -55,8 +55,8 @@ class MatchingPipeline:
         attach_nlp_features(filtered_mentees)
         attach_nlp_features(filtered_mentors)
 
-        # Step 4: convert normalized text into deterministic local embeddings.
-        # These vectors are hash-based bag-of-words encodings, not a trained neural model.
+        # Step 4: build segmented semantic embeddings (industry/degree/personality).
+        # Embeddings are generated in batch before scoring for runtime efficiency.
         attach_embeddings(filtered_mentees)
         attach_embeddings(filtered_mentors)
 
@@ -68,7 +68,7 @@ class MatchingPipeline:
             mentor_ids={mentor.mentor_id for mentor in filtered_mentors},
         )
 
-        # Step 6: score every possible mentor/mentee pair using direct matches + NLP cosine similarity.
+        # Step 6: score every possible mentor/mentee pair using segmented semantics + direct factors.
         ranked_pairs = build_ranked_pairs(
             filtered_mentees,
             filtered_mentors,
