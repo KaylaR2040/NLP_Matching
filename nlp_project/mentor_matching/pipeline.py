@@ -125,6 +125,7 @@ def write_outputs(result: MatchingRunResult, output_dir: Path, top_n: int = 25) 
                 "match_score",
                 "match_percent",
                 "match_band",
+                "match_reason",
                 "locked",
             ],
         )
@@ -140,6 +141,7 @@ def write_outputs(result: MatchingRunResult, output_dir: Path, top_n: int = 25) 
                     "match_score": f"{row['match_score']:.6f}",
                     "match_percent": row["match_percent"],
                     "match_band": row.get("match_band", ""),
+                    "match_reason": row.get("match_reason", ""),
                     "locked": row["locked"],
                 }
             )

@@ -484,6 +484,39 @@ def _weighted_average(scores: Dict[str, float], weights: Dict[str, float], facto
     return sum(scores[factor] * active_weights[factor] for factor in active_weights) / denom
 
 
+def _build_match_reason(component_scores: Dict[str, float], display_weights: Dict[str, float]) -> str:
+    """Create a short human-readable rationale for why a pair matched."""
+    ranked = sorted(
+        ((factor, component_scores.get(factor, 0.0), display_weights.get(factor, 0.0)) for factor in FACTOR_KEYS),
+        key=lambda item: (item[1] * item[2], item[2], item[1]),
+        reverse=True,
+    )
+
+    top = ranked[0]
+    second = ranked[1] if len(ranked) > 1 else ranked[0]
+
+    factor_labels = {
+        "industry": "industry and technical interests",
+        "degree": "academic background",
+        "personality": "profile/personality fit",
+        "identity": "identity/pronoun alignment",
+        "orgs": "organization overlap",
+        "grad_year": "graduation timeline",
+    }
+
+    top_label = factor_labels.get(top[0], top[0])
+    second_label = factor_labels.get(second[0], second[0])
+
+    if component_scores.get("industry", 0.0) >= 0.60 and component_scores.get("degree", 0.0) >= 0.80:
+        return "Matched strongly on technical/industry alignment and compatible academic background."
+    if component_scores.get("industry", 0.0) >= 0.60:
+        return "Matched primarily on strong technical and industry alignment."
+    if component_scores.get("degree", 0.0) >= 0.90:
+        return "Matched primarily on very close degree/program alignment."
+
+    return f"Matched mostly on {top_label}, with additional support from {second_label}."
+
+
 def _pair_factor_weights(
     raw_weights: Dict[str, float],
     active_flags: Dict[str, bool],
@@ -605,6 +638,7 @@ def score_pair(mentee: Mentee, mentor: Mentor, state: MatchingState) -> PairScor
     match_score = max(0.0, min(1.0, match_score))
 
     display_weights = effective_weights
+    match_reason = _build_match_reason(component_scores, display_weights)
     match_percent = match_score * 100.0
     if match_percent >= MATCH_BAND_EXCEPTIONAL:
         match_band = "exceptional"
@@ -627,4 +661,5 @@ def score_pair(mentee: Mentee, mentor: Mentor, state: MatchingState) -> PairScor
         display_weights=display_weights,
         match_score=match_score,
         match_band=match_band,
+        match_reason=match_reason,
     )
