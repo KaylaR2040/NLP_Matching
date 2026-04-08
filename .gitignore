@@ -3,6 +3,11 @@
 
 # API KEYS
 .env
+.env.*
+!.env.example
+wrapper/backend/.env
+wrapper/backend/.env.*
+!wrapper/backend/.env.example
 
 # PYTHON
 __pycache__/

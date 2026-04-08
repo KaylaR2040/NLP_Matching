@@ -125,15 +125,20 @@ class MenteeFormData {
   }
 
   Map<String, dynamic> toJson() {
+    final canonicalEducationLevel = _canonicalizeDegreeLevel(educationLevel);
+    final canonicalDegreePrograms = degreePrograms
+        .map(_canonicalizeDegreeProgram)
+        .toList();
+
     return {
       'email': emailController.text,
       'firstName': firstNameController.text,
       'lastName': lastNameController.text,
       'pronouns': pronouns,
-      'educationLevel': educationLevel,
+      'educationLevel': canonicalEducationLevel,
       'graduationSemester': graduationSemester,
       'graduationYear': graduationYear,
-      'degreePrograms': degreePrograms,
+      'degreePrograms': canonicalDegreePrograms,
       'hasConcentration': hasConcentration,
       'concentrations': concentrations,
       'phdSpecialization': phdSpecializationController.text.trim(),
@@ -160,4 +165,32 @@ class MenteeFormData {
     aboutYourselfController.dispose();
     phdSpecializationController.dispose();
   }
+}
+
+String? _canonicalizeDegreeLevel(String? raw) {
+  if (raw == null) return null;
+  final normalized = raw.trim().toLowerCase().replaceAll('.', '');
+  if (normalized == 'bs' || normalized == 'b s') return 'BS';
+  if (normalized == 'ms' || normalized == 'm s') return 'MS';
+  if (normalized == 'phd' || normalized == 'ph d') return 'PhD';
+  if (normalized == 'abm') return 'ABM';
+  return raw.trim();
+}
+
+String _canonicalizeDegreeProgram(String raw) {
+  var value = raw.trim();
+  value = value.replaceAll(
+    RegExp(r'\bM\.?\s*S\.?\b', caseSensitive: false),
+    'MS',
+  );
+  value = value.replaceAll(
+    RegExp(r'\bB\.?\s*S\.?\b', caseSensitive: false),
+    'BS',
+  );
+  value = value.replaceAll(
+    RegExp(r'\bPh\.?\s*D\.?\b', caseSensitive: false),
+    'PhD',
+  );
+  value = value.replaceAll(RegExp(r'\s+'), ' ');
+  return value;
 }

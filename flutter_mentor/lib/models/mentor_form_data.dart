@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../constants/form_options.dart';
 
 /// Structured representation of a single degree entry.
 class DegreeEntry {
@@ -13,10 +14,32 @@ class DegreeEntry {
   });
 
   Map<String, String> toJson() => {
-    'level': level,
-    'program': program,
-    'graduationYear': graduationYear,
+    'level': _canonicalDegreeLevel(level),
+    'program': _canonicalizeDegreeProgram(program),
+    'graduationYear': graduationYear.trim(),
   };
+}
+
+String _canonicalDegreeLevel(String level) {
+  return FormOptions.canonicalDegreeLevel(level);
+}
+
+String _canonicalizeDegreeProgram(String program) {
+  var value = program.trim();
+  value = value.replaceAll(
+    RegExp(r'\bM\.?\s*S\.?\b', caseSensitive: false),
+    'MS',
+  );
+  value = value.replaceAll(
+    RegExp(r'\bB\.?\s*S\.?\b', caseSensitive: false),
+    'BS',
+  );
+  value = value.replaceAll(
+    RegExp(r'\bPh\.?\s*D\.?\b', caseSensitive: false),
+    'PhD',
+  );
+  value = value.replaceAll(RegExp(r'\s+'), ' ');
+  return value;
 }
 
 class MentorFormData {

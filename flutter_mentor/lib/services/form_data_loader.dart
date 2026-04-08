@@ -13,6 +13,31 @@ class FormDataLoader {
   List<String>? _abmPrograms;
   List<String>? _phdPrograms;
 
+  bool _isDegreeFilePath(String path) {
+    return path.endsWith('undergrad_programs.txt') ||
+        path.endsWith('grad_programs.txt') ||
+        path.endsWith('abm_programs.txt') ||
+        path.endsWith('phd_programs.txt');
+  }
+
+  String _canonicalizeDegreeProgramLine(String raw) {
+    var value = raw.trim();
+    value = value.replaceAll(
+      RegExp(r'\bM\.?\s*S\.?\b', caseSensitive: false),
+      'MS',
+    );
+    value = value.replaceAll(
+      RegExp(r'\bB\.?\s*S\.?\b', caseSensitive: false),
+      'BS',
+    );
+    value = value.replaceAll(
+      RegExp(r'\bPh\.?\s*D\.?\b', caseSensitive: false),
+      'PhD',
+    );
+    value = value.replaceAll(RegExp(r'\s+'), ' ');
+    return value;
+  }
+
   Future<void> loadAll() async {
     await Future.wait([
       loadNcsuOrgs(),
@@ -31,10 +56,16 @@ class FormDataLoader {
 
   Future<List<String>> _loadFile(String path) async {
     try {
+      final normalizeDegreeLine = _isDegreeFilePath(path);
       final data = await rootBundle.loadString(path);
       final values = data
           .split('\n')
           .map((line) => line.trim())
+          .map(
+            (line) => normalizeDegreeLine
+                ? _canonicalizeDegreeProgramLine(line)
+                : line,
+          )
           .where((line) => line.isNotEmpty)
           .toList();
       values.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));

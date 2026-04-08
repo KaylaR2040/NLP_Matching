@@ -403,7 +403,9 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
   }
 
   Future<void> _openDegreeDialog({DegreeEntry? existing, int? index}) async {
-    String? selectedLevel = existing?.level;
+    String? selectedLevel = existing == null
+        ? null
+        : FormOptions.canonicalDegreeLevel(existing.level);
     String? selectedProgram = existing?.program;
     String customProgram = '';
     if (existing != null &&
@@ -544,7 +546,7 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
                         normalizedProgram.isNotEmpty &&
                         selectedYear != null) {
                       result = DegreeEntry(
-                        level: selectedLevel!,
+                        level: FormOptions.canonicalDegreeLevel(selectedLevel!),
                         program: normalizedProgram,
                         graduationYear: selectedYear!,
                       );

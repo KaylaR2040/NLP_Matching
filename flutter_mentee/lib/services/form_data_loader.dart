@@ -17,6 +17,24 @@ class FormDataLoader {
 
   String _dataPath(String fileName) => '$_dataDir/$fileName';
 
+  String _canonicalizeDegreeProgramLine(String raw) {
+    var value = raw.trim();
+    value = value.replaceAll(
+      RegExp(r'\bM\.?\s*S\.?\b', caseSensitive: false),
+      'MS',
+    );
+    value = value.replaceAll(
+      RegExp(r'\bB\.?\s*S\.?\b', caseSensitive: false),
+      'BS',
+    );
+    value = value.replaceAll(
+      RegExp(r'\bPh\.?\s*D\.?\b', caseSensitive: false),
+      'PhD',
+    );
+    value = value.replaceAll(RegExp(r'\s+'), ' ');
+    return value;
+  }
+
   /// Loads all files required by the form before rendering options.
   Future<void> loadAll() async {
     await Future.wait([
@@ -60,7 +78,7 @@ class FormDataLoader {
       );
       _undergradPrograms = data
           .split('\n')
-          .map((line) => line.trim())
+          .map((line) => _canonicalizeDegreeProgramLine(line))
           .where((line) => line.isNotEmpty)
           .toList();
       _undergradPrograms!.sort(
@@ -83,7 +101,7 @@ class FormDataLoader {
       final data = await rootBundle.loadString(_dataPath('grad_programs.txt'));
       _gradPrograms = data
           .split('\n')
-          .map((line) => line.trim())
+          .map((line) => _canonicalizeDegreeProgramLine(line))
           .where((line) => line.isNotEmpty)
           .toList();
       _gradPrograms!.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
@@ -103,9 +121,7 @@ class FormDataLoader {
   Future<List<String>> loadConcentrations() async {
     if (_concentrations != null) return _concentrations!;
     try {
-      final data = await rootBundle.loadString(
-        _dataPath('concentrations.txt'),
-      );
+      final data = await rootBundle.loadString(_dataPath('concentrations.txt'));
       _concentrations = data
           .split('\n')
           .map((line) => line.trim())
@@ -131,7 +147,7 @@ class FormDataLoader {
       final data = await rootBundle.loadString(_dataPath('abm_programs.txt'));
       _abmPrograms = data
           .split('\n')
-          .map((line) => line.trim())
+          .map((line) => _canonicalizeDegreeProgramLine(line))
           .where((line) => line.isNotEmpty)
           .toList();
       _abmPrograms!.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
@@ -155,7 +171,7 @@ class FormDataLoader {
       final data = await rootBundle.loadString(_dataPath('phd_programs.txt'));
       _phdPrograms = data
           .split('\n')
-          .map((line) => line.trim())
+          .map((line) => _canonicalizeDegreeProgramLine(line))
           .where((line) => line.isNotEmpty)
           .toList();
       _phdPrograms!.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));

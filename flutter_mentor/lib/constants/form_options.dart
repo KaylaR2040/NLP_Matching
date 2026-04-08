@@ -20,13 +20,7 @@ class FormOptions {
     'PhD',
   ];
 
-  static const List<String> degreeLevels = [
-    'ABM',
-    'B.S.',
-    'MS',
-    'Other',
-    'PhD',
-  ];
+  static const List<String> degreeLevels = ['ABM', 'BS', 'MS', 'Other', 'PhD'];
 
   static List<String> get undergradPrograms => _loader.undergradPrograms;
   static List<String> get gradPrograms => _loader.gradPrograms;
@@ -112,20 +106,41 @@ class FormOptions {
   }
 
   static List<String> getDegreeProgramsForLevels(List<String> levels) {
+    final canonicalLevels = levels.map(canonicalDegreeLevel).toSet();
     final programs = <String>{};
-    if (levels.contains('B.S.')) {
+    if (canonicalLevels.contains('BS')) {
       programs.addAll(undergradPrograms);
     }
-    if (levels.contains('ABM')) {
+    if (canonicalLevels.contains('ABM')) {
       programs.addAll(abmPrograms);
     }
-    if (levels.contains('MS')) {
+    if (canonicalLevels.contains('MS')) {
       programs.addAll(gradPrograms);
     }
-    if (levels.contains('PhD')) {
+    if (canonicalLevels.contains('PhD')) {
       programs.addAll(phdPrograms);
     }
     return _sorted(programs.toList());
+  }
+
+  static String canonicalDegreeLevel(String level) {
+    final normalized = level.trim().toLowerCase().replaceAll('.', '');
+    if (normalized == 'bs' || normalized == 'b s') {
+      return 'BS';
+    }
+    if (normalized == 'ms' || normalized == 'm s') {
+      return 'MS';
+    }
+    if (normalized == 'phd' || normalized == 'ph d') {
+      return 'PhD';
+    }
+    if (normalized == 'abm') {
+      return 'ABM';
+    }
+    if (normalized == 'other') {
+      return 'Other';
+    }
+    return level.trim();
   }
 
   static List<String> _sorted(List<String> values) {
