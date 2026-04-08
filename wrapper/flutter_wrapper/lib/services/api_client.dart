@@ -166,6 +166,150 @@ class ApiClient {
     return {'data': parsed};
   }
 
+  Future<Map<String, dynamic>> listMentors({
+    String query = '',
+    bool? activeOnly,
+    bool? hasLinkedIn,
+    String company = '',
+    String location = '',
+    int offset = 0,
+    int limit = 200,
+  }) async {
+    final params = <String, String>{
+      if (query.trim().isNotEmpty) 'q': query.trim(),
+      if (activeOnly != null) 'active_only': activeOnly ? 'true' : 'false',
+      if (hasLinkedIn != null) 'has_linkedin': hasLinkedIn ? 'true' : 'false',
+      if (company.trim().isNotEmpty) 'company': company.trim(),
+      if (location.trim().isNotEmpty) 'location': location.trim(),
+      'offset': '$offset',
+      'limit': '$limit',
+    };
+    final uri = Uri.parse('$baseUrl/mentors').replace(queryParameters: params);
+    final response = await http.get(
+      uri,
+      headers: _jsonHeaders(requireAuth: true),
+    );
+    _throwIfError(response, 'list mentors');
+    return _decodeBody(response);
+  }
+
+  Future<Map<String, dynamic>> getMentor(String mentorId) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/mentors/$mentorId'),
+      headers: _jsonHeaders(requireAuth: true),
+    );
+    _throwIfError(response, 'get mentor');
+    return _decodeBody(response);
+  }
+
+  Future<Map<String, dynamic>> createMentor(
+      Map<String, dynamic> payload) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/mentors'),
+      headers: _jsonHeaders(requireAuth: true),
+      body: jsonEncode(payload),
+    );
+    _throwIfError(response, 'create mentor');
+    return _decodeBody(response);
+  }
+
+  Future<Map<String, dynamic>> updateMentor({
+    required String mentorId,
+    required Map<String, dynamic> payload,
+  }) async {
+    final response = await http.put(
+      Uri.parse('$baseUrl/mentors/$mentorId'),
+      headers: _jsonHeaders(requireAuth: true),
+      body: jsonEncode(payload),
+    );
+    _throwIfError(response, 'update mentor');
+    return _decodeBody(response);
+  }
+
+  Future<Map<String, dynamic>> deactivateMentor(String mentorId) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/mentors/$mentorId'),
+      headers: _jsonHeaders(requireAuth: true),
+    );
+    _throwIfError(response, 'deactivate mentor');
+    return _decodeBody(response);
+  }
+
+  Future<Map<String, dynamic>> importMentorsCsv({
+    required SelectedFile file,
+    String sourceCsvPath = '',
+    bool dryRun = false,
+  }) async {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$baseUrl/mentors/import-csv'),
+    )
+      ..fields['source_csv_path'] = sourceCsvPath
+      ..fields['dry_run'] = dryRun ? 'true' : 'false'
+      ..files.add(http.MultipartFile.fromBytes(
+        'file',
+        file.bytes,
+        filename: file.filename,
+      ));
+
+    if (_authToken != null && _authToken!.isNotEmpty) {
+      request.headers['Authorization'] = 'Bearer $_authToken';
+    }
+
+    final streamed = await request.send();
+    final bodyText = await streamed.stream.bytesToString();
+    if (streamed.statusCode >= 400) {
+      if (streamed.statusCode == 401 || streamed.statusCode == 403) {
+        throw ApiUnauthorizedException(
+            'import mentors csv failed (${streamed.statusCode}): $bodyText');
+      }
+      throw ApiClientException(
+          'import mentors csv failed (${streamed.statusCode}): $bodyText');
+    }
+
+    final parsed = jsonDecode(bodyText);
+    if (parsed is Map<String, dynamic>) {
+      return parsed;
+    }
+    return {'data': parsed};
+  }
+
+  Future<List<int>> exportMentorsCsv({bool includeInactive = true}) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/mentors/export-csv').replace(queryParameters: {
+        'include_inactive': includeInactive ? 'true' : 'false'
+      }),
+      headers: _jsonHeaders(requireAuth: true),
+    );
+    _throwIfError(response, 'export mentors csv');
+    return response.bodyBytes;
+  }
+
+  Future<Map<String, dynamic>> syncMentorsToDefaultCsv(
+      {bool includeInactive = true}) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/mentors/sync-to-default-csv').replace(
+          queryParameters: {
+            'include_inactive': includeInactive ? 'true' : 'false'
+          }),
+      headers: _jsonHeaders(requireAuth: true),
+      body: '{}',
+    );
+    _throwIfError(response, 'sync mentors to default csv');
+    return _decodeBody(response);
+  }
+
+  Future<Map<String, dynamic>> enqueueMentorLinkedInEnrichment(
+      String mentorId) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/mentors/$mentorId/enrich-linkedin'),
+      headers: _jsonHeaders(requireAuth: true),
+      body: '{}',
+    );
+    _throwIfError(response, 'queue linkedin enrichment');
+    return _decodeBody(response);
+  }
+
   Future<Map<String, dynamic>> updateOrgs() async {
     final response = await http.post(
       Uri.parse('$baseUrl/update_orgs'),
