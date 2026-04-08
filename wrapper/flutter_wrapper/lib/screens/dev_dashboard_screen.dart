@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../constants/ncsu_theme.dart';
 import '../services/api_client.dart';
+import 'mentor_manager_screen.dart';
 
 class _DevFileMeta {
   final String fileKey;
@@ -392,6 +393,28 @@ class _DevDashboardScreenState extends State<DevDashboardScreen> {
         appBar: AppBar(
           title: const Text('Dev Dashboard'),
           foregroundColor: NCSUColors.wolfpackWhite,
+          actions: [
+            TextButton.icon(
+              onPressed: _busy
+                  ? null
+                  : () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => MentorManagerScreen(
+                            apiClient: widget.apiClient,
+                            onAuthExpired: widget.onAuthExpired,
+                          ),
+                        ),
+                      );
+                    },
+              icon: const Icon(Icons.manage_accounts_outlined,
+                  color: Colors.white),
+              label: const Text(
+                'Mentor Manager',
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+          ],
         ),
         body: Padding(
           padding: const EdgeInsets.all(16),

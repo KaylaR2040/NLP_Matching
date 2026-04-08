@@ -8,6 +8,8 @@ import '../constants/ncsu_theme.dart';
 import '../models/match_models.dart';
 import '../services/api_client.dart';
 import 'dev_dashboard_screen.dart';
+import 'mentor_manager_screen.dart';
+import 'mentors_directory_screen.dart';
 
 class MatchingDashboardScreen extends StatefulWidget {
   final bool isDev;
@@ -657,6 +659,37 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
       appBar: AppBar(
         title: const Text('Mentor Matcher Dashboard'),
         actions: [
+          TextButton.icon(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => MentorsDirectoryScreen(
+                    apiClient: widget.apiClient,
+                    onAuthExpired: widget.onLogout,
+                  ),
+                ),
+              );
+            },
+            icon: const Icon(Icons.groups_outlined, color: Colors.white),
+            label: const Text('Mentors', style: TextStyle(color: Colors.white)),
+          ),
+          if (widget.isDev)
+            TextButton.icon(
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => MentorManagerScreen(
+                      apiClient: widget.apiClient,
+                      onAuthExpired: widget.onLogout,
+                    ),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.manage_accounts_outlined,
+                  color: Colors.white),
+              label:
+                  const Text('Manager', style: TextStyle(color: Colors.white)),
+            ),
           if (widget.isDev)
             TextButton.icon(
               onPressed: () {
