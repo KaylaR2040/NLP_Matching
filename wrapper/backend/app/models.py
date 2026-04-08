@@ -147,3 +147,26 @@ class MentorUpdateRequest(BaseModel):
 class MentorsListResponse(BaseModel):
     items: List[MentorRecord] = Field(default_factory=list)
     total: int = 0
+
+
+class MentorImportResponse(BaseModel):
+    rows_read: int
+    created: int
+    updated: int
+    unchanged: int
+    skipped: int
+    errors: int
+    error_rows: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class MentorSyncResponse(BaseModel):
+    rows: int
+    columns: List[str] = Field(default_factory=list)
+    output_path: str
+    backup_path: str = ""
+
+
+class MentorEnrichmentResponse(BaseModel):
+    mentor_id: str
+    enrichment_status: str
+    message: str

@@ -33,7 +33,10 @@ from .models import (
     LoginResponse,
     MeResponse,
     MentorCreateRequest,
+    MentorEnrichmentResponse,
+    MentorImportResponse,
     MentorRecord,
+    MentorSyncResponse,
     MentorsListResponse,
     MentorUpdateRequest,
     RunMatchPayload,
@@ -579,9 +582,9 @@ def _bool_match(value: str, term: str) -> bool:
     return term in value.lower()
 
 
-def _normalize_source_path_for_api(path_value: str) -> str:
+def _normalize_source_path_for_api(path_value: str, *, fallback: str = "nlp_project/data/mentor_real.csv") -> str:
     if not path_value:
-        return "nlp_project/data/mentor_real.csv"
+        return fallback
     value = Path(path_value)
     try:
         relative = value.resolve().relative_to(REPO_ROOT)
@@ -740,6 +743,59 @@ def list_mentors(
     return MentorsListResponse(items=items, total=total)
 
 
+@app.post("/mentors/import-csv", response_model=MentorImportResponse)
+async def import_mentors_csv(
+    file: UploadFile = File(...),
+    source_csv_path: str = Form(""),
+    dry_run: bool = Form(False),
+    session: AuthSession = Depends(_require_auth(require_dev=True)),
+) -> MentorImportResponse:
+    filename = file.filename or "mentors.csv"
+    if not filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only CSV files are supported for mentor import")
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+    report = MENTOR_STORE.import_csv_bytes(
+        content,
+        source_csv_path=(source_csv_path.strip() or filename),
+        actor=session.username,
+        dry_run=dry_run,
+    )
+    return MentorImportResponse(**report)
+
+
+@app.get("/mentors/export-csv")
+def export_mentors_csv(
+    include_inactive: bool = True,
+    _session: AuthSession = Depends(_require_auth()),
+) -> StreamingResponse:
+    export_payload = MENTOR_STORE.export_csv(include_inactive=include_inactive)
+    csv_text = str(export_payload["csv_text"])
+    output = BytesIO(csv_text.encode("utf-8"))
+    headers = {"Content-Disposition": "attachment; filename=mentor_real_export.csv"}
+    return StreamingResponse(output, media_type="text/csv; charset=utf-8", headers=headers)
+
+
+@app.post("/mentors/sync-to-default-csv", response_model=MentorSyncResponse)
+def sync_mentors_to_default_csv(
+    include_inactive: bool = True,
+    _session: AuthSession = Depends(_require_auth(require_dev=True)),
+) -> MentorSyncResponse:
+    result = MENTOR_STORE.write_export_to_path(
+        MENTOR_SOURCE_CSV_PATH,
+        include_inactive=include_inactive,
+    )
+    return MentorSyncResponse(
+        rows=int(result.get("rows", 0)),
+        columns=[str(item) for item in result.get("columns", [])],
+        output_path=_normalize_source_path_for_api(str(result.get("output_path", ""))),
+        backup_path=_normalize_source_path_for_api(str(result.get("backup_path", "")), fallback=""),
+    )
+
+
 @app.get("/mentors/{mentor_id}", response_model=MentorRecord)
 def get_mentor(
     mentor_id: str,
@@ -796,6 +852,29 @@ def deactivate_mentor(
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return MentorRecord(**_mentor_record_for_api(updated))
+
+
+@app.post("/mentors/{mentor_id}/enrich-linkedin", response_model=MentorEnrichmentResponse)
+def enqueue_linkedin_enrichment(
+    mentor_id: str,
+    session: AuthSession = Depends(_require_auth(require_dev=True)),
+) -> MentorEnrichmentResponse:
+    record = MENTOR_STORE.get_by_id(mentor_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"Mentor '{mentor_id}' was not found")
+
+    # TODO: Integrate an approved backend enrichment pipeline (queue + worker).
+    # The mentor management flow must continue to work with enrichment disabled.
+    updated = MENTOR_STORE.update(
+        mentor_id,
+        {"enrichment_status": "queued"},
+        actor=session.username,
+    )
+    return MentorEnrichmentResponse(
+        mentor_id=mentor_id,
+        enrichment_status=str(updated.get("enrichment_status", "queued")),
+        message="LinkedIn enrichment queued (stub). Worker integration is not implemented yet.",
+    )
 
 
 @app.post("/run_match")
