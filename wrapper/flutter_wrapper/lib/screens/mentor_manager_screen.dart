@@ -492,6 +492,8 @@ class _MentorEditorDialogState extends State<_MentorEditorDialog> {
   late final TextEditingController _preferredContactController;
 
   bool _isActive = true;
+  bool _dirty = false;
+  late Map<String, dynamic> _initialSnapshot;
 
   @override
   void initState() {
@@ -524,10 +526,16 @@ class _MentorEditorDialogState extends State<_MentorEditorDialog> {
     _preferredContactController =
         TextEditingController(text: record?.preferredContactMethod ?? '');
     _isActive = record?.isActive ?? true;
+
+    _initialSnapshot = _snapshot();
+    _controllers
+        .forEach((controller) => controller.addListener(_onFieldChanged));
   }
 
   @override
   void dispose() {
+    _controllers
+        .forEach((controller) => controller.removeListener(_onFieldChanged));
     _emailController.dispose();
     _firstNameController.dispose();
     _lastNameController.dispose();
@@ -546,6 +554,104 @@ class _MentorEditorDialogState extends State<_MentorEditorDialog> {
     _phoneController.dispose();
     _preferredContactController.dispose();
     super.dispose();
+  }
+
+  List<TextEditingController> get _controllers => [
+        _emailController,
+        _firstNameController,
+        _lastNameController,
+        _linkedInController,
+        _photoController,
+        _companyController,
+        _titleController,
+        _locationController,
+        _cityController,
+        _stateController,
+        _degreesController,
+        _industryController,
+        _experienceController,
+        _aboutController,
+        _studentsController,
+        _phoneController,
+        _preferredContactController,
+      ];
+
+  void _onFieldChanged() {
+    final isDirtyNow = !_snapshotEquals(_snapshot(), _initialSnapshot);
+    if (isDirtyNow != _dirty) {
+      setState(() => _dirty = isDirtyNow);
+    }
+  }
+
+  Map<String, dynamic> _snapshot() {
+    return {
+      'email': _emailController.text.trim(),
+      'first_name': _firstNameController.text.trim(),
+      'last_name': _lastNameController.text.trim(),
+      'linkedin_url': _linkedInController.text.trim(),
+      'profile_photo_url': _photoController.text.trim(),
+      'current_company': _companyController.text.trim(),
+      'current_job_title': _titleController.text.trim(),
+      'current_location': _locationController.text.trim(),
+      'current_city': _cityController.text.trim(),
+      'current_state': _stateController.text.trim(),
+      'degrees_text': _degreesController.text.trim(),
+      'industry_focus_area': _industryController.text.trim(),
+      'professional_experience': _experienceController.text.trim(),
+      'about_yourself': _aboutController.text.trim(),
+      'students_interested': _studentsController.text.trim(),
+      'phone': _phoneController.text.trim(),
+      'preferred_contact_method': _preferredContactController.text.trim(),
+      'is_active': _isActive,
+    };
+  }
+
+  bool _snapshotEquals(Map<String, dynamic> a, Map<String, dynamic> b) {
+    if (a.length != b.length) {
+      return false;
+    }
+    for (final entry in a.entries) {
+      if (!b.containsKey(entry.key)) {
+        return false;
+      }
+      if (b[entry.key] != entry.value) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  Future<void> _attemptDismiss() async {
+    if (!_dirty) {
+      Navigator.of(context).pop();
+      return;
+    }
+
+    final shouldDiscard = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Discard Unsaved Changes?'),
+          content: const Text(
+            'You have unsaved mentor edits. Discard changes and close?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Keep Editing'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Discard'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldDiscard == true && mounted) {
+      Navigator.of(context).pop();
+    }
   }
 
   void _save() {
@@ -618,185 +724,206 @@ class _MentorEditorDialogState extends State<_MentorEditorDialog> {
   Widget build(BuildContext context) {
     final title = widget.initial == null ? 'Add Mentor' : 'Edit Mentor';
 
-    return AlertDialog(
-      title: Text(title),
-      content: SizedBox(
-        width: 820,
-        child: Form(
-          key: _formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    SizedBox(
-                      width: 240,
-                      child: _textField(
-                        controller: _emailController,
-                        label: 'Email',
-                        validator: (value) {
-                          if ((value ?? '').trim().isEmpty) {
-                            return 'Email is required';
-                          }
-                          return null;
+    return PopScope(
+      canPop: !_dirty,
+      onPopInvokedWithResult: (didPop, _result) {
+        if (!didPop) {
+          _attemptDismiss();
+        }
+      },
+      child: AlertDialog(
+        title: Row(
+          children: [
+            Expanded(child: Text(title)),
+            if (_dirty)
+              Text(
+                'Unsaved changes',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.orange.shade800,
+                    ),
+              ),
+          ],
+        ),
+        content: SizedBox(
+          width: 820,
+          child: Form(
+            key: _formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      SizedBox(
+                        width: 240,
+                        child: _textField(
+                          controller: _emailController,
+                          label: 'Email',
+                          validator: (value) {
+                            if ((value ?? '').trim().isEmpty) {
+                              return 'Email is required';
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                      SizedBox(
+                        width: 240,
+                        child: _textField(
+                          controller: _firstNameController,
+                          label: 'First Name',
+                        ),
+                      ),
+                      SizedBox(
+                        width: 240,
+                        child: _textField(
+                          controller: _lastNameController,
+                          label: 'Last Name',
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      SizedBox(
+                        width: 370,
+                        child: _textField(
+                          controller: _linkedInController,
+                          label: 'LinkedIn URL',
+                        ),
+                      ),
+                      SizedBox(
+                        width: 370,
+                        child: _textField(
+                          controller: _photoController,
+                          label: 'Profile Photo URL',
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      SizedBox(
+                        width: 240,
+                        child: _textField(
+                          controller: _companyController,
+                          label: 'Current Company',
+                        ),
+                      ),
+                      SizedBox(
+                        width: 240,
+                        child: _textField(
+                          controller: _titleController,
+                          label: 'Current Job Title',
+                        ),
+                      ),
+                      SizedBox(
+                        width: 240,
+                        child: _textField(
+                          controller: _locationController,
+                          label: 'Current Location',
+                        ),
+                      ),
+                      SizedBox(
+                        width: 240,
+                        child: _textField(
+                          controller: _cityController,
+                          label: 'Current City',
+                        ),
+                      ),
+                      SizedBox(
+                        width: 240,
+                        child: _textField(
+                          controller: _stateController,
+                          label: 'Current State',
+                        ),
+                      ),
+                      SizedBox(
+                        width: 240,
+                        child: _textField(
+                          controller: _degreesController,
+                          label: 'Degrees',
+                        ),
+                      ),
+                      SizedBox(
+                        width: 240,
+                        child: _textField(
+                          controller: _industryController,
+                          label: 'Industry Focus Area',
+                        ),
+                      ),
+                      SizedBox(
+                        width: 240,
+                        child: _textField(
+                          controller: _studentsController,
+                          label: 'Students Interested',
+                        ),
+                      ),
+                      SizedBox(
+                        width: 240,
+                        child: _textField(
+                          controller: _phoneController,
+                          label: 'Phone',
+                        ),
+                      ),
+                      SizedBox(
+                        width: 240,
+                        child: _textField(
+                          controller: _preferredContactController,
+                          label: 'Preferred Contact Method',
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  _textField(
+                    controller: _experienceController,
+                    label: 'Professional Experience',
+                    maxLines: 3,
+                  ),
+                  const SizedBox(height: 10),
+                  _textField(
+                    controller: _aboutController,
+                    label: 'About Yourself',
+                    maxLines: 3,
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Checkbox(
+                        value: _isActive,
+                        onChanged: (value) {
+                          setState(() => _isActive = value ?? true);
+                          _onFieldChanged();
                         },
                       ),
-                    ),
-                    SizedBox(
-                      width: 240,
-                      child: _textField(
-                        controller: _firstNameController,
-                        label: 'First Name',
-                      ),
-                    ),
-                    SizedBox(
-                      width: 240,
-                      child: _textField(
-                        controller: _lastNameController,
-                        label: 'Last Name',
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    SizedBox(
-                      width: 370,
-                      child: _textField(
-                        controller: _linkedInController,
-                        label: 'LinkedIn URL',
-                      ),
-                    ),
-                    SizedBox(
-                      width: 370,
-                      child: _textField(
-                        controller: _photoController,
-                        label: 'Profile Photo URL',
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    SizedBox(
-                      width: 240,
-                      child: _textField(
-                        controller: _companyController,
-                        label: 'Current Company',
-                      ),
-                    ),
-                    SizedBox(
-                      width: 240,
-                      child: _textField(
-                        controller: _titleController,
-                        label: 'Current Job Title',
-                      ),
-                    ),
-                    SizedBox(
-                      width: 240,
-                      child: _textField(
-                        controller: _locationController,
-                        label: 'Current Location',
-                      ),
-                    ),
-                    SizedBox(
-                      width: 240,
-                      child: _textField(
-                        controller: _cityController,
-                        label: 'Current City',
-                      ),
-                    ),
-                    SizedBox(
-                      width: 240,
-                      child: _textField(
-                        controller: _stateController,
-                        label: 'Current State',
-                      ),
-                    ),
-                    SizedBox(
-                      width: 240,
-                      child: _textField(
-                        controller: _degreesController,
-                        label: 'Degrees',
-                      ),
-                    ),
-                    SizedBox(
-                      width: 240,
-                      child: _textField(
-                        controller: _industryController,
-                        label: 'Industry Focus Area',
-                      ),
-                    ),
-                    SizedBox(
-                      width: 240,
-                      child: _textField(
-                        controller: _studentsController,
-                        label: 'Students Interested',
-                      ),
-                    ),
-                    SizedBox(
-                      width: 240,
-                      child: _textField(
-                        controller: _phoneController,
-                        label: 'Phone',
-                      ),
-                    ),
-                    SizedBox(
-                      width: 240,
-                      child: _textField(
-                        controller: _preferredContactController,
-                        label: 'Preferred Contact Method',
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                _textField(
-                  controller: _experienceController,
-                  label: 'Professional Experience',
-                  maxLines: 3,
-                ),
-                const SizedBox(height: 10),
-                _textField(
-                  controller: _aboutController,
-                  label: 'About Yourself',
-                  maxLines: 3,
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Checkbox(
-                      value: _isActive,
-                      onChanged: (value) =>
-                          setState(() => _isActive = value ?? true),
-                    ),
-                    const Text('Active mentor'),
-                  ],
-                ),
-              ],
+                      const Text('Active mentor'),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
+        actions: [
+          TextButton(
+            onPressed: _attemptDismiss,
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: _save,
+            child: const Text('Save'),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        ElevatedButton(
-          onPressed: _save,
-          child: const Text('Save'),
-        ),
-      ],
     );
   }
 }
