@@ -32,10 +32,15 @@ from .models import (
     LoginRequest,
     LoginResponse,
     MeResponse,
+    MentorCreateRequest,
+    MentorRecord,
+    MentorsListResponse,
+    MentorUpdateRequest,
     RunMatchPayload,
     SaveMajorsRequest,
     ScriptRequest,
 )
+from .mentor_store import DEFAULT_MENTOR_BACKUP_DIR, DEFAULT_MENTOR_STORE_PATH, MentorStore
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -50,6 +55,7 @@ PHD_PROGRAMS_PATH = DATA_DIR / "phd_programs.txt"
 DEFAULT_MAJORS_PATH = GRAD_PROGRAMS_PATH
 DEV_BACKUP_DIR = REPO_ROOT / "wrapper" / "backend" / "data" / "dev_file_backups"
 BACKEND_ENV_PATH = REPO_ROOT / "wrapper" / "backend" / ".env"
+DEFAULT_MENTOR_SOURCE_CSV = REPO_ROOT / "nlp_project" / "data" / "mentor_real.csv"
 
 load_dotenv(BACKEND_ENV_PATH)
 
@@ -66,6 +72,16 @@ LOGIN_WINDOW_SECONDS = int(os.getenv("WRAPPER_LOGIN_WINDOW_SECONDS", "300"))
 LOGIN_MAX_ATTEMPTS_PER_IP = int(os.getenv("WRAPPER_LOGIN_MAX_ATTEMPTS_PER_IP", "20"))
 LOGIN_MAX_ATTEMPTS_PER_USER = int(os.getenv("WRAPPER_LOGIN_MAX_ATTEMPTS_PER_USER", "10"))
 LOGIN_LOCKOUT_SECONDS = int(os.getenv("WRAPPER_LOGIN_LOCKOUT_SECONDS", "600"))
+
+MENTOR_STORE_PATH = Path(
+    os.getenv("WRAPPER_MENTOR_STORE_PATH", str(DEFAULT_MENTOR_STORE_PATH))
+).expanduser()
+MENTOR_BACKUP_DIR = Path(
+    os.getenv("WRAPPER_MENTOR_BACKUP_DIR", str(DEFAULT_MENTOR_BACKUP_DIR))
+).expanduser()
+MENTOR_SOURCE_CSV_PATH = Path(
+    os.getenv("WRAPPER_MENTOR_SOURCE_CSV_PATH", str(DEFAULT_MENTOR_SOURCE_CSV))
+).expanduser()
 
 DEV_EDITABLE_FILES: Dict[str, Dict[str, Any]] = {
     "ncsu_orgs": {
@@ -132,6 +148,7 @@ FAILED_ATTEMPTS_BY_USER: Dict[str, LoginRateBucket] = defaultdict(
     lambda: LoginRateBucket(attempts=deque(), lockout_until=0.0)
 )
 LOG = logging.getLogger("wrapper.auth")
+MENTOR_STORE = MentorStore(store_path=MENTOR_STORE_PATH, backup_dir=MENTOR_BACKUP_DIR)
 
 
 app = FastAPI(title="NLP Mentor Matcher Wrapper API", version="1.0.0")
@@ -552,6 +569,33 @@ def _write_text_file(path: Path, text: str) -> Dict[str, Any]:
     return {"status": "ok", "path": str(path), "line_count": line_count}
 
 
+def _model_dict(instance: Any, *, exclude_unset: bool = False) -> Dict[str, Any]:
+    if hasattr(instance, "model_dump"):
+        return instance.model_dump(exclude_unset=exclude_unset)  # Pydantic v2
+    return instance.dict(exclude_unset=exclude_unset)  # Pydantic v1
+
+
+def _bool_match(value: str, term: str) -> bool:
+    return term in value.lower()
+
+
+def _normalize_source_path_for_api(path_value: str) -> str:
+    if not path_value:
+        return "nlp_project/data/mentor_real.csv"
+    value = Path(path_value)
+    try:
+        relative = value.resolve().relative_to(REPO_ROOT)
+        return str(relative)
+    except Exception:
+        return value.name
+
+
+def _mentor_record_for_api(record: Dict[str, Any]) -> Dict[str, Any]:
+    payload = dict(record)
+    payload["source_csv_path"] = _normalize_source_path_for_api(str(payload.get("source_csv_path", "")))
+    return payload
+
+
 @app.get("/health")
 def health() -> Dict[str, str]:
     return {"status": "ok"}
@@ -626,6 +670,132 @@ def me(session: AuthSession = Depends(_require_auth())) -> MeResponse:
         is_dev=session.is_dev,
         expires_at=int(session.expires_at),
     )
+
+
+@app.get("/mentors", response_model=MentorsListResponse)
+def list_mentors(
+    q: str = "",
+    active_only: bool = False,
+    has_linkedin: Optional[bool] = None,
+    company: str = "",
+    location: str = "",
+    offset: int = 0,
+    limit: int = 200,
+    _session: AuthSession = Depends(_require_auth()),
+) -> MentorsListResponse:
+    records = MENTOR_STORE.load_records()
+
+    query = q.strip().lower()
+    company_term = company.strip().lower()
+    location_term = location.strip().lower()
+
+    filtered: List[Dict[str, Any]] = []
+    for record in records:
+        is_active = bool(record.get("is_active", True))
+        linkedin_url = str(record.get("linkedin_url", "")).strip()
+
+        if active_only and not is_active:
+            continue
+        if has_linkedin is True and not linkedin_url:
+            continue
+        if has_linkedin is False and linkedin_url:
+            continue
+        if company_term and not _bool_match(str(record.get("current_company", "")), company_term):
+            continue
+
+        location_text = " ".join(
+            [
+                str(record.get("current_location", "")),
+                str(record.get("current_city", "")),
+                str(record.get("current_state", "")),
+            ]
+        )
+        if location_term and not _bool_match(location_text, location_term):
+            continue
+
+        if query:
+            haystack = " ".join(
+                [
+                    str(record.get("mentor_id", "")),
+                    str(record.get("email", "")),
+                    str(record.get("full_name", "")),
+                    str(record.get("current_company", "")),
+                    str(record.get("current_job_title", "")),
+                    str(record.get("current_location", "")),
+                    str(record.get("industry_focus_area", "")),
+                ]
+            ).lower()
+            if query not in haystack:
+                continue
+
+        filtered.append(record)
+
+    filtered.sort(key=lambda row: str(row.get("full_name", "")).strip().lower())
+    total = len(filtered)
+    bounded_offset = max(0, offset)
+    bounded_limit = min(max(1, limit), 1000)
+    page = filtered[bounded_offset : bounded_offset + bounded_limit]
+
+    items = [MentorRecord(**_mentor_record_for_api(row)) for row in page]
+    return MentorsListResponse(items=items, total=total)
+
+
+@app.get("/mentors/{mentor_id}", response_model=MentorRecord)
+def get_mentor(
+    mentor_id: str,
+    _session: AuthSession = Depends(_require_auth()),
+) -> MentorRecord:
+    record = MENTOR_STORE.get_by_id(mentor_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"Mentor '{mentor_id}' was not found")
+    return MentorRecord(**_mentor_record_for_api(record))
+
+
+@app.post("/mentors", response_model=MentorRecord)
+def create_mentor(
+    request: MentorCreateRequest,
+    session: AuthSession = Depends(_require_auth(require_dev=True)),
+) -> MentorRecord:
+    payload = _model_dict(request, exclude_unset=False)
+    if not str(payload.get("source_csv_path", "")).strip():
+        payload["source_csv_path"] = str(MENTOR_SOURCE_CSV_PATH)
+    try:
+        created = MENTOR_STORE.create(payload, actor=session.username)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return MentorRecord(**_mentor_record_for_api(created))
+
+
+@app.put("/mentors/{mentor_id}", response_model=MentorRecord)
+def update_mentor(
+    mentor_id: str,
+    request: MentorUpdateRequest,
+    session: AuthSession = Depends(_require_auth(require_dev=True)),
+) -> MentorRecord:
+    updates = _model_dict(request, exclude_unset=True)
+    if not updates:
+        existing = MENTOR_STORE.get_by_id(mentor_id)
+        if existing is None:
+            raise HTTPException(status_code=404, detail=f"Mentor '{mentor_id}' was not found")
+        return MentorRecord(**_mentor_record_for_api(existing))
+
+    try:
+        updated = MENTOR_STORE.update(mentor_id, updates, actor=session.username)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return MentorRecord(**_mentor_record_for_api(updated))
+
+
+@app.delete("/mentors/{mentor_id}", response_model=MentorRecord)
+def deactivate_mentor(
+    mentor_id: str,
+    session: AuthSession = Depends(_require_auth(require_dev=True)),
+) -> MentorRecord:
+    try:
+        updated = MENTOR_STORE.deactivate(mentor_id, actor=session.username)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return MentorRecord(**_mentor_record_for_api(updated))
 
 
 @app.post("/run_match")
