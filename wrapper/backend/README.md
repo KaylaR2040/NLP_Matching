@@ -31,6 +31,46 @@ This service is the bridge between Flutter Web and the existing Python matcher a
   - Form field: `payload_json` (JSON string)
   - Runs `nlp_project/main.py ... run` and returns the parsed `latest_matches.json`.
 
+- `GET /mentors`
+  - Requires bearer token.
+  - Lists mentors from backend-managed persistent storage.
+  - Supports filters/query params: `q`, `active_only`, `has_linkedin`, `company`, `location`, `offset`, `limit`.
+
+- `GET /mentors/{mentor_id}`
+  - Requires bearer token.
+  - Returns one mentor record.
+
+- `POST /mentors`
+  - Requires dev role bearer token.
+  - Creates a mentor record.
+
+- `PUT /mentors/{mentor_id}`
+  - Requires dev role bearer token.
+  - Updates a mentor record.
+
+- `DELETE /mentors/{mentor_id}`
+  - Requires dev role bearer token.
+  - Soft-deactivates a mentor (sets `is_active=false`).
+
+- `POST /mentors/import-csv` (multipart form)
+  - Requires dev role bearer token.
+  - Accepts `mentor_real.csv`-style uploads.
+  - Upserts by email first, then fallback identity matching.
+  - Returns import summary counts (`created`, `updated`, `unchanged`, `skipped`, `errors`).
+
+- `GET /mentors/export-csv`
+  - Requires bearer token.
+  - Exports mentor data in a `mentor_real.csv`-compatible structure.
+
+- `POST /mentors/sync-to-default-csv`
+  - Requires dev role bearer token.
+  - Writes current mentor export back to canonical backend CSV path.
+
+- `POST /mentors/{mentor_id}/enrich-linkedin`
+  - Requires dev role bearer token.
+  - Stub endpoint only; queues enrichment status and returns TODO message.
+  - No live LinkedIn scraping is implemented in the frontend or backend.
+
 - `POST /update_orgs`
   - Requires dev role bearer token.
   - Runs `wrapper/backend/scripts/pull_orgs.py` (or provided script path) and writes `data/ncsu_orgs.txt`.
@@ -100,6 +140,28 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
+## Mentor storage
+
+- Default persistent mentor store:
+  - `wrapper/backend/data/mentors/mentors_store.json`
+- Backup snapshots:
+  - `wrapper/backend/data/mentors/backups/`
+- Canonical CSV path used for sync/export compatibility:
+  - `nlp_project/data/mentor_real.csv`
+
+## Persistence limitation and migration path
+
+- Current mentor persistence is file-backed for MVP.
+- In serverless/ephemeral deployments, local file writes may not be durable across instances.
+- All mentor reads/writes are isolated behind `app/mentor_store.py` so you can later replace it with:
+  - a relational DB (Postgres/MySQL),
+  - a managed document store,
+  - or shared object storage + metadata DB.
+- Migration path:
+  1. Keep API contracts unchanged.
+  2. Replace `MentorStore` implementation with a DB-backed repository.
+  3. Run one-time import from `mentors_store.json` / `mentor_real.csv`.
+
 ## Secrets and environment
 
 - Keep secrets in `wrapper/backend/.env` (gitignored).
@@ -116,3 +178,7 @@ uvicorn app.main:app --reload --port 8000
 - Login errors are generic (`Invalid credentials`) to avoid user enumeration.
 - Security audit events are logged for login success/failure, rate-limit blocks, token refresh/logout, and denied dev access attempts.
 - Enable `WRAPPER_REQUIRE_HTTPS=true` in deployment so non-local HTTP traffic is rejected.
+- Mentor storage/config env vars:
+  - `WRAPPER_MENTOR_STORE_PATH`
+  - `WRAPPER_MENTOR_BACKUP_DIR`
+  - `WRAPPER_MENTOR_SOURCE_CSV_PATH`

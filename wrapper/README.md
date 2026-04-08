@@ -3,7 +3,7 @@
 This folder isolates the integration layer around your existing matcher.
 
 - `backend/`: FastAPI bridge that accepts Flutter requests and calls `nlp_project/main.py`.
-- `flutter_wrapper/`: New Flutter Web shell for login, matching dashboard, drag/drop board, and dev dashboard.
+- `flutter_wrapper/`: Flutter Web shell for login, matching dashboard, mentor directory, mentor manager, drag/drop board, and dev dashboard.
 - `FULL_SYSTEM_BLUEPRINT.md`: Detailed end-to-end product and technical spec.
 
 ## Quick Start
@@ -23,3 +23,20 @@ The backend calls the existing matcher through:
 - `nlp_project/main.py`
 
 No matching logic is duplicated in `wrapper/backend`; it is only an orchestration bridge.
+
+## Mentor Management MVP
+
+- Persistent backend mentor store (file-backed for MVP) via `backend/app/mentor_store.py`
+- Backend mentor APIs (auth required, writes dev-only):
+  - `GET /mentors`, `GET /mentors/{mentor_id}`
+  - `POST /mentors`, `PUT /mentors/{mentor_id}`, `DELETE /mentors/{mentor_id}`
+  - `POST /mentors/import-csv`, `GET /mentors/export-csv`
+  - `POST /mentors/sync-to-default-csv`
+  - `POST /mentors/{mentor_id}/enrich-linkedin` (stub)
+- Frontend pages:
+  - regular users: Mentors Directory
+  - dev users: Mentor Manager (edit/import/export/sync)
+
+## Deployment note
+
+Mentor persistence is currently file-backed. In serverless/ephemeral environments, local writes may not be durable. The store is intentionally isolated behind `MentorStore` so it can be replaced with shared storage or a database without changing API contracts.

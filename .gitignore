@@ -34,6 +34,7 @@ build/
 !/data/*.csv
 nlp_project/data/
 wrapper/backend/data/dev_file_backups/
+wrapper/backend/data/mentors/backups/
 
 # OTHER
 .idea/
