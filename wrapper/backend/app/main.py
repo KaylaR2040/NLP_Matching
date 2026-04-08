@@ -47,6 +47,7 @@ CONCENTRATIONS_PATH = DATA_DIR / "concentrations.txt"
 GRAD_PROGRAMS_PATH = DATA_DIR / "grad_programs.txt"
 ABM_PROGRAMS_PATH = DATA_DIR / "abm_programs.txt"
 PHD_PROGRAMS_PATH = DATA_DIR / "phd_programs.txt"
+DEFAULT_MAJORS_PATH = GRAD_PROGRAMS_PATH
 DEV_BACKUP_DIR = REPO_ROOT / "wrapper" / "backend" / "data" / "dev_file_backups"
 BACKEND_ENV_PATH = REPO_ROOT / "wrapper" / "backend" / ".env"
 
@@ -325,19 +326,95 @@ def _audit_dev_action(action: str, session: AuthSession) -> None:
     LOG.info("dev_action action=%s username=%s", action, session.username)
 
 
+def _pair_key(mentee_id: str, mentor_id: str) -> str:
+    return f"{mentee_id}::{mentor_id}"
+
+
+def _dev_file_entry(file_key: str) -> Dict[str, Any]:
+    entry = DEV_EDITABLE_FILES.get(file_key)
+    if entry is None:
+        raise HTTPException(status_code=404, detail=f"Unknown dev file key: {file_key}")
+    return entry
+
+
+def _dev_file_path(file_key: str) -> Path:
+    return Path(_dev_file_entry(file_key)["path"]).resolve()
+
+
+def _list_dev_file_entries() -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for key, entry in DEV_EDITABLE_FILES.items():
+        path = Path(entry["path"]).resolve()
+        file_info = _read_text_file(path)
+        rows.append(
+            {
+                "file_key": key,
+                "label": str(entry["label"]),
+                "path": file_info["path"],
+                "line_count": file_info["line_count"],
+                "has_update_script": bool(entry.get("script_kind")),
+            }
+        )
+    rows.sort(key=lambda item: str(item["label"]).lower())
+    return rows
+
+
+def _backup_current_file(path: Path, file_key: str) -> Optional[Path]:
+    if not path.exists():
+        return None
+    timestamp = time.strftime("%Y%m%d_%H%M%S", time.localtime())
+    backup_dir = DEV_BACKUP_DIR / file_key
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    backup_path = backup_dir / f"{timestamp}.txt"
+    shutil.copy2(path, backup_path)
+    return backup_path
+
+
+def _write_text_file_with_backup(path: Path, text: str, file_key: str) -> Dict[str, Any]:
+    backup_path = _backup_current_file(path, file_key)
+    payload = _write_text_file(path, text)
+    payload["backup_path"] = str(backup_path) if backup_path else None
+    return payload
+
+
+def _latest_backup_path(file_key: str) -> Optional[Path]:
+    backup_dir = DEV_BACKUP_DIR / file_key
+    if not backup_dir.exists():
+        return None
+    candidates = sorted(
+        [item for item in backup_dir.glob("*.txt") if item.is_file()],
+        key=lambda item: item.stat().st_mtime,
+    )
+    if not candidates:
+        return None
+    return candidates[-1]
+
+
+def _revert_file_from_latest_backup(file_key: str) -> Dict[str, Any]:
+    latest = _latest_backup_path(file_key)
+    if latest is None:
+        raise HTTPException(status_code=404, detail="No backup exists for this file")
+    target = _dev_file_path(file_key)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(latest, target)
+    payload = _read_text_file(target)
+    payload["reverted_from"] = str(latest)
+    return payload
+
+
 def _validate_payload(raw: Dict[str, Any]) -> RunMatchPayload:
     if hasattr(RunMatchPayload, "model_validate"):
         return RunMatchPayload.model_validate(raw)  # Pydantic v2
     return RunMatchPayload.parse_obj(raw)  # Pydantic v1
 
 
-def _pair_rows(pairs: Iterable[Any]) -> List[List[str]]:
-    rows: List[List[str]] = []
+def _pair_rows(pairs: Iterable[Any]) -> List[str]:
+    rows: List[str] = []
     for pair in pairs:
         mentee_id = str(getattr(pair, "mentee_id", "")).strip()
         mentor_id = str(getattr(pair, "mentor_id", "")).strip()
         if mentee_id and mentor_id:
-            rows.append([mentee_id, mentor_id])
+            rows.append(_pair_key(mentee_id, mentor_id))
     return rows
 
 
@@ -649,6 +726,76 @@ def update_concentrations(
             "No concentrations-update script found. Pass script_path in request body or add one of the expected scripts."
         ),
     )
+
+
+@app.get("/dev/files")
+def list_dev_files(_session: AuthSession = Depends(_require_auth(require_dev=True))) -> Dict[str, Any]:
+    _audit_dev_action("list_dev_files", _session)
+    return {"files": _list_dev_file_entries()}
+
+
+@app.get("/dev/file/{file_key}")
+def get_dev_file(file_key: str, _session: AuthSession = Depends(_require_auth(require_dev=True))) -> Dict[str, Any]:
+    _audit_dev_action(f"get_dev_file:{file_key}", _session)
+    entry = _dev_file_entry(file_key)
+    file_info = _read_text_file(_dev_file_path(file_key))
+    file_info["file_key"] = file_key
+    file_info["label"] = str(entry["label"])
+    file_info["has_update_script"] = bool(entry.get("script_kind"))
+    return file_info
+
+
+@app.post("/dev/file/save")
+def save_dev_file(
+    request: DevFileSaveRequest,
+    _session: AuthSession = Depends(_require_auth(require_dev=True)),
+) -> Dict[str, Any]:
+    _audit_dev_action(f"save_dev_file:{request.file_key}", _session)
+    entry = _dev_file_entry(request.file_key)
+    payload = _write_text_file_with_backup(
+        _dev_file_path(request.file_key),
+        request.text,
+        request.file_key,
+    )
+    payload["file_key"] = request.file_key
+    payload["label"] = str(entry["label"])
+    return payload
+
+
+@app.post("/dev/file/revert-last")
+def revert_dev_file(
+    request: DevFileRequest,
+    _session: AuthSession = Depends(_require_auth(require_dev=True)),
+) -> Dict[str, Any]:
+    _audit_dev_action(f"revert_dev_file:{request.file_key}", _session)
+    entry = _dev_file_entry(request.file_key)
+    payload = _revert_file_from_latest_backup(request.file_key)
+    payload["file_key"] = request.file_key
+    payload["label"] = str(entry["label"])
+    return payload
+
+
+@app.post("/dev/file/run-update")
+def run_dev_file_update(
+    request: DevFileRequest,
+    _session: AuthSession = Depends(_require_auth(require_dev=True)),
+) -> Dict[str, Any]:
+    _audit_dev_action(f"run_dev_file_update:{request.file_key}", _session)
+    entry = _dev_file_entry(request.file_key)
+    script_kind = entry.get("script_kind")
+    if not script_kind:
+        raise HTTPException(status_code=400, detail="No update script configured for this file")
+
+    output_path = _dev_file_path(request.file_key)
+    for candidate in _script_candidates(str(script_kind)):
+        if candidate.exists():
+            result = _run_script_with_output_fallback(candidate, output_path)
+            result["file"] = _read_text_file(output_path)
+            result["file_key"] = request.file_key
+            result["label"] = str(entry["label"])
+            return result
+
+    raise HTTPException(status_code=404, detail=f"No update script found for {request.file_key}")
 
 
 @app.get("/get_majors")

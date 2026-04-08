@@ -39,6 +39,7 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
   final Set<PairKey> _lockedPairs = {};
   final Set<PairKey> _rejectedPairs = {};
   final Set<PairKey> _exclusionPairs = {};
+  final Map<PairKey, double> _pairMatchPercent = {};
 
   String? _selectedExclusionMenteeId;
   String? _selectedExclusionMentorId;
@@ -99,7 +100,7 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
         'rejected_pairs': blockedPairs.map((pair) => pair.toJson()).toList(),
         'excluded_mentee_ids': <String>[],
         'excluded_mentor_ids': <String>[],
-        'top_n': 100,
+        'top_n': 5000,
       };
 
       final response = await widget.apiClient.runMatch(
@@ -127,6 +128,7 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
     _mentorsById.clear();
     _menteesById.clear();
     _unmatchedMenteeIds.clear();
+    _pairMatchPercent.clear();
 
     void ensureMentor(dynamic row) {
       final mentorId = (row['mentor_id'] ?? '').toString();
@@ -152,10 +154,12 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
     for (final row in rankedPairs) {
       ensureMentor(row);
       ensureMentee(row);
+      _setPairPercentFromRow(row);
     }
     for (final row in assignments) {
       ensureMentor(row);
       ensureMentee(row);
+      _setPairPercentFromRow(row);
     }
 
     final assigned = <String>{};
@@ -175,6 +179,50 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
         _unmatchedMenteeIds.add(menteeId);
       }
     }
+  }
+
+  void _setPairPercentFromRow(dynamic row) {
+    final menteeId = (row['mentee_id'] ?? '').toString();
+    final mentorId = (row['mentor_id'] ?? '').toString();
+    if (menteeId.isEmpty || mentorId.isEmpty) {
+      return;
+    }
+
+    final raw = row['match_percent'];
+    double? value;
+    if (raw is num) {
+      value = raw.toDouble();
+    } else if (raw != null) {
+      value = double.tryParse(raw.toString().replaceAll('%', '').trim());
+    }
+    if (value == null) {
+      return;
+    }
+
+    _pairMatchPercent[PairKey(menteeId: menteeId, mentorId: mentorId)] = value;
+  }
+
+  double? _matchPercentForPair(String menteeId, String mentorId) {
+    return _pairMatchPercent[PairKey(menteeId: menteeId, mentorId: mentorId)];
+  }
+
+  String _matchBand(double? percent) {
+    if (percent == null) {
+      return 'unknown';
+    }
+    if (percent >= 90) {
+      return 'exceptional';
+    }
+    if (percent >= 75) {
+      return 'strong';
+    }
+    if (percent >= 60) {
+      return 'decent';
+    }
+    if (percent >= 45) {
+      return 'possible';
+    }
+    return 'weak';
   }
 
   void _moveMenteeToMentor(String menteeId, String mentorId) {
@@ -237,18 +285,34 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
     });
   }
 
+  Future<void> _resetAndRunFromScratch() async {
+    setState(() {
+      _lockedPairs.clear();
+      _rejectedPairs.clear();
+      _exclusionPairs.clear();
+      _selectedExclusionMenteeId = null;
+      _selectedExclusionMentorId = null;
+      _status = 'Reset constraints. Running from scratch...';
+    });
+    await _runMatch(rerun: false);
+  }
+
   Future<void> _exportCurrentBoard() async {
     final rows = <Map<String, dynamic>>[];
     for (final mentor in _mentorCards) {
       for (final menteeId in mentor.menteeIds) {
         final mentee = _menteesById[menteeId];
+        final matchPercent = _matchPercentForPair(menteeId, mentor.mentorId);
+        final isLocked = _lockedPairs
+            .contains(PairKey(menteeId: menteeId, mentorId: mentor.mentorId));
         rows.add({
           'mentor_id': mentor.mentorId,
           'mentor_name': mentor.mentorName,
           'mentee_id': menteeId,
           'mentee_name': mentee?.name ?? menteeId,
-          'locked': _lockedPairs
-              .contains(PairKey(menteeId: menteeId, mentorId: mentor.mentorId)),
+          'match_percent': matchPercent?.toStringAsFixed(2) ?? '',
+          'match_band': _matchBand(matchPercent),
+          'lock_status': isLocked ? 'locked' : 'unlocked',
         });
       }
     }
@@ -260,7 +324,9 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
         'mentor_name': 'UNMATCHED',
         'mentee_id': menteeId,
         'mentee_name': mentee?.name ?? menteeId,
-        'locked': false,
+        'match_percent': '',
+        'match_band': '',
+        'lock_status': 'unlocked',
       });
     }
 
@@ -290,7 +356,8 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
   }) {
     final key = PairKey(menteeId: mentee.id, mentorId: mentorId);
     final isLocked = _lockedPairs.contains(key);
-    return LongPressDraggable<String>(
+
+    return Draggable<String>(
       data: mentee.id,
       feedback: Material(
         color: Colors.transparent,
@@ -313,6 +380,7 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
   }
 
   Widget _menteeTile(MenteeRecord mentee, String mentorId, bool isLocked) {
+    final percent = _matchPercentForPair(mentee.id, mentorId);
     return Container(
       margin: const EdgeInsets.only(top: 8),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -323,7 +391,23 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
       ),
       child: Row(
         children: [
-          Expanded(child: Text(mentee.name, overflow: TextOverflow.ellipsis)),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(mentee.name, overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 2),
+                Text(
+                  percent == null
+                      ? 'Match: score unavailable'
+                      : 'Match: ${percent.toStringAsFixed(2)}% [${_matchBand(percent)}]',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.grey.shade700,
+                      ),
+                ),
+              ],
+            ),
+          ),
           IconButton(
             tooltip: isLocked ? 'Unlock Pair' : 'Lock Pair',
             icon: Icon(isLocked ? Icons.lock : Icons.lock_open),
@@ -428,7 +512,7 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
                     if (mentee == null) {
                       return const SizedBox.shrink();
                     }
-                    return LongPressDraggable<String>(
+                    return Draggable<String>(
                       data: mentee.id,
                       feedback: Material(
                         color: Colors.transparent,
@@ -453,7 +537,20 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
                           border: Border.all(color: const Color(0xFFD8D8D8)),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: Text(mentee.name),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(mentee.name),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Drop onto a mentor to rematch',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(color: Colors.grey.shade700),
+                            ),
+                          ],
+                        ),
                       ),
                     );
                   }).toList(),
@@ -483,8 +580,8 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
                 items: _menteeRecords
                     .map((mentee) => DropdownMenuItem(
                           value: mentee.id,
-                          child: Text(mentee.name,
-                              overflow: TextOverflow.ellipsis),
+                          child:
+                              Text(mentee.name, overflow: TextOverflow.ellipsis),
                         ))
                     .toList(),
                 onChanged: (value) =>
@@ -582,6 +679,10 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
                     OutlinedButton(
                       onPressed: _loading ? null : () => _runMatch(rerun: true),
                       child: const Text('Rerun'),
+                    ),
+                    OutlinedButton(
+                      onPressed: _loading ? null : _resetAndRunFromScratch,
+                      child: const Text('Reset + Run From Scratch'),
                     ),
                     OutlinedButton(
                       onPressed: _loading ? null : _exportCurrentBoard,
