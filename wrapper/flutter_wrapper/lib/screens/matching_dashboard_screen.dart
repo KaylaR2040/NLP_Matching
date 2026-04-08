@@ -100,7 +100,7 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
         'rejected_pairs': blockedPairs.map((pair) => pair.toJson()).toList(),
         'excluded_mentee_ids': <String>[],
         'excluded_mentor_ids': <String>[],
-        'top_n': 5000,
+        'top_n': 20000,
       };
 
       final response = await widget.apiClient.runMatch(
@@ -359,6 +359,14 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
 
     return Draggable<String>(
       data: mentee.id,
+      maxSimultaneousDrags: 1,
+      dragAnchorStrategy: pointerDragAnchorStrategy,
+      onDragStarted: () {
+        setState(() {
+          _status =
+              'Dragging ${mentee.name}. Drop onto a mentor card or unmatched pool.';
+        });
+      },
       feedback: Material(
         color: Colors.transparent,
         child: Container(
@@ -373,9 +381,15 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
       ),
       childWhenDragging: Opacity(
         opacity: 0.45,
+        child: MouseRegion(
+          cursor: SystemMouseCursors.grabbing,
+          child: _menteeTile(mentee, mentorId, isLocked),
+        ),
+      ),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.grab,
         child: _menteeTile(mentee, mentorId, isLocked),
       ),
-      child: _menteeTile(mentee, mentorId, isLocked),
     );
   }
 
@@ -391,6 +405,8 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
       ),
       child: Row(
         children: [
+          Icon(Icons.drag_indicator, color: Colors.grey.shade700, size: 18),
+          const SizedBox(width: 4),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -514,6 +530,14 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
                     }
                     return Draggable<String>(
                       data: mentee.id,
+                      maxSimultaneousDrags: 1,
+                      dragAnchorStrategy: pointerDragAnchorStrategy,
+                      onDragStarted: () {
+                        setState(() {
+                          _status =
+                              'Dragging ${mentee.name}. Drop onto a mentor card to rematch.';
+                        });
+                      },
                       feedback: Material(
                         color: Colors.transparent,
                         child: Container(
@@ -529,27 +553,37 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
                           child: Text(mentee.name),
                         ),
                       ),
-                      child: Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 8),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: const Color(0xFFD8D8D8)),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(mentee.name),
-                            const SizedBox(height: 2),
-                            Text(
-                              'Drop onto a mentor to rematch',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.copyWith(color: Colors.grey.shade700),
-                            ),
-                          ],
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.grab,
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 8),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: const Color(0xFFD8D8D8)),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.drag_indicator,
+                                      size: 18, color: Colors.grey.shade700),
+                                  const SizedBox(width: 4),
+                                  Expanded(child: Text(mentee.name)),
+                                ],
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Drop onto a mentor to rematch',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(color: Colors.grey.shade700),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     );
@@ -580,8 +614,8 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
                 items: _menteeRecords
                     .map((mentee) => DropdownMenuItem(
                           value: mentee.id,
-                          child:
-                              Text(mentee.name, overflow: TextOverflow.ellipsis),
+                          child: Text(mentee.name,
+                              overflow: TextOverflow.ellipsis),
                         ))
                     .toList(),
                 onChanged: (value) =>
@@ -706,6 +740,16 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
               ),
             ),
             const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Drag mentees between mentor cards or into the unmatched pool. Use lock to preserve a pair on rerun.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.black87,
+                    ),
+              ),
+            ),
+            const SizedBox(height: 4),
             Expanded(
               child: Row(
                 children: [

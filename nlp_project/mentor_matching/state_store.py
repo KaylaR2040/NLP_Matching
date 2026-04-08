@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
-from typing import Dict, List, Set, Tuple
+from typing import Dict, Iterable, List, Set, Tuple
 
 from .retry_utils import run_with_retry
 from .scoring_config import DIRECT_MATCH_FACTORS
@@ -26,6 +26,51 @@ def _validate_weight_range(value: float) -> float:
     if not 1.0 <= numeric <= 4.0:
         raise ValueError("Weight values must be between 1 and 4")
     return numeric
+
+
+def _normalize_string_set(values: object) -> Set[str]:
+    if not isinstance(values, Iterable) or isinstance(values, (str, bytes, dict)):
+        return set()
+    normalized: Set[str] = set()
+    for value in values:
+        text = str(value).strip()
+        if text:
+            normalized.add(text)
+    return normalized
+
+
+def _normalize_pair_set(values: object) -> Set[str]:
+    """Accept multiple legacy pair formats and normalize to '<mentee>::<mentor>'."""
+    if not isinstance(values, Iterable) or isinstance(values, (str, bytes, dict)):
+        return set()
+
+    normalized: Set[str] = set()
+    for item in values:
+        if isinstance(item, str):
+            text = item.strip()
+            if text:
+                if "::" in text:
+                    normalized.add(text)
+                else:
+                    mentee_id, mentor_id = _parse_pair_key(text)
+                    if mentee_id and mentor_id:
+                        normalized.add(_pair_key(mentee_id, mentor_id))
+            continue
+
+        if isinstance(item, dict):
+            mentee_id = str(item.get("mentee_id", "")).strip()
+            mentor_id = str(item.get("mentor_id", "")).strip()
+            if mentee_id and mentor_id:
+                normalized.add(_pair_key(mentee_id, mentor_id))
+            continue
+
+        if isinstance(item, (list, tuple)) and len(item) >= 2:
+            mentee_id = str(item[0]).strip()
+            mentor_id = str(item[1]).strip()
+            if mentee_id and mentor_id:
+                normalized.add(_pair_key(mentee_id, mentor_id))
+
+    return normalized
 
 
 @dataclass
@@ -55,10 +100,10 @@ class MatchingState:
     @classmethod
     def from_dict(cls, payload: Dict[str, object]) -> "MatchingState":
         return cls(
-            excluded_mentee_ids=set(payload.get("excluded_mentee_ids", [])),
-            excluded_mentor_ids=set(payload.get("excluded_mentor_ids", [])),
-            rejected_pairs=set(payload.get("rejected_pairs", [])),
-            locked_pairs=set(payload.get("locked_pairs", [])),
+            excluded_mentee_ids=_normalize_string_set(payload.get("excluded_mentee_ids", [])),
+            excluded_mentor_ids=_normalize_string_set(payload.get("excluded_mentor_ids", [])),
+            rejected_pairs=_normalize_pair_set(payload.get("rejected_pairs", [])),
+            locked_pairs=_normalize_pair_set(payload.get("locked_pairs", [])),
             global_weights=dict(payload.get("global_weights", {})),
             mentee_weight_overrides=dict(payload.get("mentee_weight_overrides", {})),
             run_count=int(payload.get("run_count", 0)),

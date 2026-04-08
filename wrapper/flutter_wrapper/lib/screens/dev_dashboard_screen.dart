@@ -1,6 +1,39 @@
 import 'package:flutter/material.dart';
 
+import '../constants/ncsu_theme.dart';
 import '../services/api_client.dart';
+
+class _DevFileMeta {
+  final String fileKey;
+  final String label;
+  final String path;
+  final int lineCount;
+  final bool hasUpdateScript;
+
+  const _DevFileMeta({
+    required this.fileKey,
+    required this.label,
+    required this.path,
+    required this.lineCount,
+    required this.hasUpdateScript,
+  });
+
+  factory _DevFileMeta.fromJson(Map<String, dynamic> json) {
+    return _DevFileMeta(
+      fileKey: (json['file_key'] ?? '').toString(),
+      label: (json['label'] ?? '').toString(),
+      path: (json['path'] ?? '').toString(),
+      lineCount: int.tryParse('${json['line_count'] ?? 0}') ?? 0,
+      hasUpdateScript: json['has_update_script'] == true,
+    );
+  }
+}
+
+enum _UnsavedAction {
+  save,
+  discard,
+  cancel,
+}
 
 class DevDashboardScreen extends StatefulWidget {
   final ApiClient apiClient;
@@ -16,34 +49,39 @@ class DevDashboardScreen extends StatefulWidget {
   State<DevDashboardScreen> createState() => _DevDashboardScreenState();
 }
 
-class _DevDashboardScreenState extends State<DevDashboardScreen>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tabs;
-  final TextEditingController _orgsController = TextEditingController();
-  final TextEditingController _concentrationsController =
-      TextEditingController();
-  final TextEditingController _majorsController = TextEditingController();
+class _DevDashboardScreenState extends State<DevDashboardScreen> {
+  final TextEditingController _editorController = TextEditingController();
 
   bool _busy = false;
-  String _status = '';
-  int _orgCount = 0;
-  int _concentrationCount = 0;
-  int _majorCount = 0;
+  bool _dirty = false;
+  bool _syncingText = false;
+  String _status = 'Loading editable files...';
+
+  List<_DevFileMeta> _files = const [];
+  String? _selectedFileKey;
+  _DevFileMeta? _selectedFileMeta;
 
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 3, vsync: this);
-    _loadAllFiles();
+    _editorController.addListener(_onEditorChanged);
+    _loadFileList();
   }
 
   @override
   void dispose() {
-    _tabs.dispose();
-    _orgsController.dispose();
-    _concentrationsController.dispose();
-    _majorsController.dispose();
+    _editorController.removeListener(_onEditorChanged);
+    _editorController.dispose();
     super.dispose();
+  }
+
+  void _onEditorChanged() {
+    if (_syncingText) {
+      return;
+    }
+    if (!_dirty) {
+      setState(() => _dirty = true);
+    }
   }
 
   Future<void> _withBusy(String message, Future<void> Function() fn) async {
@@ -54,14 +92,16 @@ class _DevDashboardScreenState extends State<DevDashboardScreen>
     try {
       await fn();
     } on ApiUnauthorizedException {
-      if (mounted) {
-        setState(() => _status = 'Session expired. Please log in again.');
+      if (!mounted) {
+        return;
       }
+      setState(() => _status = 'Session expired. Please log in again.');
       widget.onAuthExpired();
-      if (mounted) {
-        Navigator.of(context).pop();
-      }
+      Navigator.of(context).pop();
     } catch (e) {
+      if (!mounted) {
+        return;
+      }
       setState(() => _status = 'Error: $e');
     } finally {
       if (mounted) {
@@ -70,183 +110,411 @@ class _DevDashboardScreenState extends State<DevDashboardScreen>
     }
   }
 
-  Future<void> _loadAllFiles() async {
-    await _withBusy('Loading dev files...', () async {
-      final orgs = await widget.apiClient.getOrgsText();
-      final concentrations = await widget.apiClient.getConcentrationsText();
-      final majors = await widget.apiClient.getMajors();
+  Future<void> _loadFileList({String? preferredKey}) async {
+    await _withBusy('Loading editable file list...', () async {
+      final response = await widget.apiClient.listDevFiles();
+      final rows = (response['files'] as List? ?? const []);
+      final files = rows
+          .whereType<Map<String, dynamic>>()
+          .map(_DevFileMeta.fromJson)
+          .where((row) => row.fileKey.isNotEmpty)
+          .toList();
 
-      _orgsController.text = (orgs['text'] ?? '').toString();
-      _concentrationsController.text =
-          (concentrations['text'] ?? '').toString();
-      _majorsController.text = (majors['text'] ?? '').toString();
+      if (files.isEmpty) {
+        setState(() {
+          _files = const [];
+          _selectedFileKey = null;
+          _selectedFileMeta = null;
+          _syncingText = true;
+          _editorController.text = '';
+          _syncingText = false;
+          _dirty = false;
+          _status = 'No editable files were returned by backend.';
+        });
+        return;
+      }
 
-      _orgCount = int.tryParse('${orgs['line_count'] ?? 0}') ?? 0;
-      _concentrationCount =
-          int.tryParse('${concentrations['line_count'] ?? 0}') ?? 0;
-      _majorCount = int.tryParse('${majors['line_count'] ?? 0}') ?? 0;
+      final targetKey = preferredKey ?? _selectedFileKey ?? files.first.fileKey;
+      final selected = files.any((item) => item.fileKey == targetKey)
+          ? targetKey
+          : files.first.fileKey;
 
-      setState(() => _status = 'Loaded orgs, concentrations, and majors.');
+      setState(() {
+        _files = files;
+        _selectedFileKey = selected;
+        _selectedFileMeta = files.firstWhere((row) => row.fileKey == selected);
+      });
+
+      await _loadSelectedFile();
     });
   }
 
-  Future<void> _updateOrgsFromSource() async {
-    await _withBusy('Running pullorgs...', () async {
-      final response = await widget.apiClient.updateOrgs();
-      final file = response['file'] as Map<String, dynamic>? ?? {};
-      _orgsController.text = (file['text'] ?? '').toString();
-      _orgCount = int.tryParse('${file['line_count'] ?? 0}') ?? 0;
-      setState(() => _status = 'Updated ncsu_orgs.txt from source.');
+  Future<void> _loadSelectedFile() async {
+    final fileKey = _selectedFileKey;
+    if (fileKey == null) {
+      return;
+    }
+    final response = await widget.apiClient.getDevFile(fileKey);
+    final text = (response['text'] ?? '').toString();
+    final updatedCount = int.tryParse('${response['line_count'] ?? 0}') ?? 0;
+
+    final updated = _files.map((item) {
+      if (item.fileKey != fileKey) {
+        return item;
+      }
+      return _DevFileMeta(
+        fileKey: item.fileKey,
+        label: item.label,
+        path: item.path,
+        lineCount: updatedCount,
+        hasUpdateScript: item.hasUpdateScript,
+      );
+    }).toList();
+
+    setState(() {
+      _files = updated;
+      _selectedFileMeta = updated.firstWhere((item) => item.fileKey == fileKey);
+      _syncingText = true;
+      _editorController.text = text;
+      _syncingText = false;
+      _dirty = false;
+      _status = 'Loaded ${_selectedFileMeta!.label}.';
     });
   }
 
-  Future<void> _updateConcentrationsFromSource() async {
-    await _withBusy('Running pullconcentration...', () async {
-      final response = await widget.apiClient.updateConcentrations();
-      final file = response['file'] as Map<String, dynamic>? ?? {};
-      _concentrationsController.text = (file['text'] ?? '').toString();
-      _concentrationCount = int.tryParse('${file['line_count'] ?? 0}') ?? 0;
-      setState(() => _status = 'Updated concentrations.txt from source.');
+  Future<bool> _saveCurrentFile() async {
+    final fileKey = _selectedFileKey;
+    if (fileKey == null) {
+      return false;
+    }
+
+    bool success = false;
+    await _withBusy('Saving ${_selectedFileMeta?.label ?? fileKey}...',
+        () async {
+      final response = await widget.apiClient.saveDevFile(
+        fileKey: fileKey,
+        text: _editorController.text,
+      );
+      final updatedCount = int.tryParse('${response['line_count'] ?? 0}') ?? 0;
+      final backupPath = (response['backup_path'] ?? '').toString();
+
+      setState(() {
+        _files = _files.map((item) {
+          if (item.fileKey != fileKey) {
+            return item;
+          }
+          return _DevFileMeta(
+            fileKey: item.fileKey,
+            label: item.label,
+            path: item.path,
+            lineCount: updatedCount,
+            hasUpdateScript: item.hasUpdateScript,
+          );
+        }).toList();
+        _selectedFileMeta =
+            _files.firstWhere((item) => item.fileKey == fileKey);
+        _dirty = false;
+        _status = backupPath.isEmpty
+            ? 'Saved ${_selectedFileMeta!.label}.'
+            : 'Saved ${_selectedFileMeta!.label}. Backup: $backupPath';
+      });
+      success = true;
+    });
+
+    return success;
+  }
+
+  Future<void> _runUpdateScript() async {
+    final file = _selectedFileMeta;
+    if (file == null || !file.hasUpdateScript) {
+      return;
+    }
+
+    await _withBusy('Running update script for ${file.label}...', () async {
+      final response = await widget.apiClient.runDevFileUpdate(file.fileKey);
+      final filePayload =
+          (response['file'] as Map<String, dynamic>? ?? const {});
+      final text = (filePayload['text'] ?? '').toString();
+      final updatedCount =
+          int.tryParse('${filePayload['line_count'] ?? 0}') ?? 0;
+      final backupPath = (response['backup_path'] ?? '').toString();
+
+      setState(() {
+        _files = _files.map((item) {
+          if (item.fileKey != file.fileKey) {
+            return item;
+          }
+          return _DevFileMeta(
+            fileKey: item.fileKey,
+            label: item.label,
+            path: item.path,
+            lineCount: updatedCount,
+            hasUpdateScript: item.hasUpdateScript,
+          );
+        }).toList();
+        _selectedFileMeta =
+            _files.firstWhere((item) => item.fileKey == file.fileKey);
+        _syncingText = true;
+        _editorController.text = text;
+        _syncingText = false;
+        _dirty = false;
+        _status = backupPath.isEmpty
+            ? 'Updated ${file.label} from script.'
+            : 'Updated ${file.label}. Backup: $backupPath';
+      });
     });
   }
 
-  Future<void> _saveOrgs() async {
-    await _withBusy('Saving ncsu_orgs.txt...', () async {
-      await widget.apiClient.saveOrgsText(_orgsController.text);
-      final refreshed = await widget.apiClient.getOrgsText();
-      _orgCount = int.tryParse('${refreshed['line_count'] ?? 0}') ?? 0;
-      setState(() => _status = 'Saved ncsu_orgs.txt');
+  Future<void> _revertLastSaved() async {
+    final file = _selectedFileMeta;
+    if (file == null) {
+      return;
+    }
+
+    await _withBusy('Reverting ${file.label} to previous saved version...',
+        () async {
+      final response = await widget.apiClient.revertDevFile(file.fileKey);
+      final text = (response['text'] ?? '').toString();
+      final updatedCount = int.tryParse('${response['line_count'] ?? 0}') ?? 0;
+      final revertedFrom = (response['reverted_from'] ?? '').toString();
+
+      setState(() {
+        _files = _files.map((item) {
+          if (item.fileKey != file.fileKey) {
+            return item;
+          }
+          return _DevFileMeta(
+            fileKey: item.fileKey,
+            label: item.label,
+            path: item.path,
+            lineCount: updatedCount,
+            hasUpdateScript: item.hasUpdateScript,
+          );
+        }).toList();
+        _selectedFileMeta =
+            _files.firstWhere((item) => item.fileKey == file.fileKey);
+        _syncingText = true;
+        _editorController.text = text;
+        _syncingText = false;
+        _dirty = false;
+        _status = revertedFrom.isEmpty
+            ? 'Reverted ${file.label}.'
+            : 'Reverted ${file.label} from: $revertedFrom';
+      });
     });
   }
 
-  Future<void> _saveConcentrations() async {
-    await _withBusy('Saving concentrations.txt...', () async {
-      await widget.apiClient
-          .saveConcentrationsText(_concentrationsController.text);
-      final refreshed = await widget.apiClient.getConcentrationsText();
-      _concentrationCount =
-          int.tryParse('${refreshed['line_count'] ?? 0}') ?? 0;
-      setState(() => _status = 'Saved concentrations.txt');
-    });
-  }
-
-  Future<void> _saveMajors() async {
-    await _withBusy('Saving majors.txt...', () async {
-      await widget.apiClient.saveMajors(_majorsController.text);
-      final refreshed = await widget.apiClient.getMajors();
-      _majorCount = int.tryParse('${refreshed['line_count'] ?? 0}') ?? 0;
-      setState(() => _status = 'Saved majors.txt');
-    });
-  }
-
-  Widget _fileEditor({
-    required String title,
-    required String subtitle,
-    required TextEditingController controller,
-    required VoidCallback onSave,
-    required int count,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 4),
-        Text('$subtitle • $count entries',
-            style: Theme.of(context).textTheme.bodySmall),
-        const SizedBox(height: 10),
-        Expanded(
-          child: TextField(
-            controller: controller,
-            expands: true,
-            maxLines: null,
-            minLines: null,
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              alignLabelWithHint: true,
+  Future<_UnsavedAction> _promptUnsavedAction() async {
+    final result = await showDialog<_UnsavedAction>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Unsaved Changes'),
+          content: const Text(
+            'You have unsaved edits. Save before leaving this file?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(_UnsavedAction.cancel),
+              child: const Text('Cancel'),
             ),
-          ),
-        ),
-        const SizedBox(height: 10),
-        Align(
-          alignment: Alignment.centerRight,
-          child: ElevatedButton(
-            onPressed: _busy ? null : onSave,
-            child: const Text('Save'),
-          ),
-        ),
-      ],
+            OutlinedButton(
+              onPressed: () =>
+                  Navigator.of(context).pop(_UnsavedAction.discard),
+              child: const Text('Discard'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(_UnsavedAction.save),
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
     );
+
+    return result ?? _UnsavedAction.cancel;
+  }
+
+  Future<bool> _maybeHandleUnsavedChanges() async {
+    if (!_dirty) {
+      return true;
+    }
+
+    final action = await _promptUnsavedAction();
+    if (action == _UnsavedAction.cancel) {
+      return false;
+    }
+    if (action == _UnsavedAction.discard) {
+      setState(() => _dirty = false);
+      return true;
+    }
+    return _saveCurrentFile();
+  }
+
+  Future<void> _onFileSelectionChanged(String? nextFileKey) async {
+    if (_busy || nextFileKey == null || nextFileKey == _selectedFileKey) {
+      return;
+    }
+
+    final proceed = await _maybeHandleUnsavedChanges();
+    if (!proceed) {
+      return;
+    }
+
+    setState(() {
+      _selectedFileKey = nextFileKey;
+      _selectedFileMeta =
+          _files.firstWhere((item) => item.fileKey == nextFileKey);
+    });
+
+    await _withBusy('Loading ${_selectedFileMeta?.label ?? nextFileKey}...',
+        _loadSelectedFile);
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Dev Dashboard'),
-        bottom: TabBar(
-          controller: _tabs,
-          tabs: const [
-            Tab(text: 'NCSU Orgs'),
-            Tab(text: 'Concentrations'),
-            Tab(text: 'Majors'),
-          ],
+    final selected = _selectedFileMeta;
+
+    return PopScope(
+      canPop: !_dirty,
+      onPopInvokedWithResult: (didPop, _result) {
+        if (didPop) {
+          return;
+        }
+        _maybeHandleUnsavedChanges().then((proceed) {
+          if (proceed && mounted) {
+            Navigator.of(context).pop();
+          }
+        });
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Dev Dashboard'),
+          foregroundColor: NCSUColors.wolfpackWhite,
         ),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                ElevatedButton(
-                  onPressed: _busy ? null : _updateOrgsFromSource,
-                  child: const Text('Pull NCSU Orgs'),
-                ),
-                ElevatedButton(
-                  onPressed: _busy ? null : _updateConcentrationsFromSource,
-                  child: const Text('Pull Concentrations'),
-                ),
-                OutlinedButton(
-                  onPressed: _busy ? null : _loadAllFiles,
-                  child: const Text('Reload All Files'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Text(_status),
-            const SizedBox(height: 10),
-            Expanded(
-              child: TabBarView(
-                controller: _tabs,
+        body: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  _fileEditor(
-                    title: 'data/ncsu_orgs.txt',
-                    subtitle: 'Manual editor for organizations',
-                    controller: _orgsController,
-                    onSave: _saveOrgs,
-                    count: _orgCount,
+                  SizedBox(
+                    width: 360,
+                    child: DropdownButtonFormField<String>(
+                      initialValue: _selectedFileKey,
+                      decoration: const InputDecoration(
+                        labelText: 'Editable File',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: _files
+                          .map(
+                            (item) => DropdownMenuItem<String>(
+                              value: item.fileKey,
+                              child: Text(item.label),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: _onFileSelectionChanged,
+                    ),
                   ),
-                  _fileEditor(
-                    title: 'data/concentrations.txt',
-                    subtitle: 'Manual editor for concentrations',
-                    controller: _concentrationsController,
-                    onSave: _saveConcentrations,
-                    count: _concentrationCount,
+                  OutlinedButton(
+                    onPressed: _busy
+                        ? null
+                        : () => _loadFileList(preferredKey: _selectedFileKey),
+                    child: const Text('Reload File List'),
                   ),
-                  _fileEditor(
-                    title: 'wrapper/backend/data/majors.txt',
-                    subtitle: 'Manual editor for majors',
-                    controller: _majorsController,
-                    onSave: _saveMajors,
-                    count: _majorCount,
+                  OutlinedButton(
+                    onPressed:
+                        (_busy || selected == null) ? null : _revertLastSaved,
+                    child: const Text('Revert To Last Backup'),
                   ),
+                  ElevatedButton(
+                    onPressed: (_busy || !_dirty || selected == null)
+                        ? null
+                        : _saveCurrentFile,
+                    child: const Text('Save'),
+                  ),
+                  if (selected?.hasUpdateScript == true)
+                    ElevatedButton(
+                      onPressed: _busy ? null : _runUpdateScript,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: NCSUColors.bioIndigo,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: Text(
+                        selected!.fileKey == 'ncsu_orgs'
+                            ? 'Run pullorgs'
+                            : 'Run pullconcentration',
+                      ),
+                    ),
                 ],
               ),
-            ),
-          ],
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFD8D8D8)),
+                ),
+                child: Text(
+                  _status,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyMedium
+                      ?.copyWith(color: Colors.black87),
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (selected != null)
+                Text(
+                  '${selected.path} • ${selected.lineCount} non-empty lines',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: Colors.black87),
+                ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: TextField(
+                  controller: _editorController,
+                  enabled: !_busy && selected != null,
+                  expands: true,
+                  minLines: null,
+                  maxLines: null,
+                  decoration: InputDecoration(
+                    labelText: selected == null
+                        ? 'No file selected'
+                        : '${selected.label} editor',
+                    border: const OutlineInputBorder(),
+                    alignLabelWithHint: true,
+                    filled: true,
+                    fillColor: Colors.white,
+                  ),
+                  style: const TextStyle(
+                    color: Colors.black,
+                    height: 1.3,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (_dirty)
+                Text(
+                  'Unsaved changes present. Save is required before leaving this page or switching files.',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: NCSUColors.reynoldsRed),
+                ),
+            ],
+          ),
         ),
       ),
     );

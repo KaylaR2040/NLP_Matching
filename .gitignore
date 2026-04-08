@@ -33,6 +33,7 @@ build/
 !/data/*.txt
 !/data/*.csv
 nlp_project/data/
+wrapper/backend/data/dev_file_backups/
 
 # OTHER
 .idea/

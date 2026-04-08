@@ -411,8 +411,25 @@ def _validate_payload(raw: Dict[str, Any]) -> RunMatchPayload:
 def _pair_rows(pairs: Iterable[Any]) -> List[str]:
     rows: List[str] = []
     for pair in pairs:
-        mentee_id = str(getattr(pair, "mentee_id", "")).strip()
-        mentor_id = str(getattr(pair, "mentor_id", "")).strip()
+        mentee_id = ""
+        mentor_id = ""
+
+        if isinstance(pair, dict):
+            mentee_id = str(pair.get("mentee_id", "")).strip()
+            mentor_id = str(pair.get("mentor_id", "")).strip()
+        elif isinstance(pair, (list, tuple)) and len(pair) >= 2:
+            mentee_id = str(pair[0]).strip()
+            mentor_id = str(pair[1]).strip()
+        elif isinstance(pair, str):
+            raw = pair.strip()
+            if "::" in raw:
+                left, right = raw.split("::", 1)
+                mentee_id = left.strip()
+                mentor_id = right.strip()
+        else:
+            mentee_id = str(getattr(pair, "mentee_id", "")).strip()
+            mentor_id = str(getattr(pair, "mentor_id", "")).strip()
+
         if mentee_id and mentor_id:
             rows.append(_pair_key(mentee_id, mentor_id))
     return rows
@@ -787,12 +804,14 @@ def run_dev_file_update(
         raise HTTPException(status_code=400, detail="No update script configured for this file")
 
     output_path = _dev_file_path(request.file_key)
+    backup_path = _backup_current_file(output_path, request.file_key)
     for candidate in _script_candidates(str(script_kind)):
         if candidate.exists():
             result = _run_script_with_output_fallback(candidate, output_path)
             result["file"] = _read_text_file(output_path)
             result["file_key"] = request.file_key
             result["label"] = str(entry["label"])
+            result["backup_path"] = str(backup_path) if backup_path else None
             return result
 
     raise HTTPException(status_code=404, detail=f"No update script found for {request.file_key}")

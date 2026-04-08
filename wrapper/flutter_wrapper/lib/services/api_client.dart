@@ -186,6 +186,60 @@ class ApiClient {
     return _decodeBody(response);
   }
 
+  Future<Map<String, dynamic>> listDevFiles() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/dev/files'),
+      headers: _jsonHeaders(requireAuth: true),
+    );
+    _throwIfError(response, 'list dev files');
+    return _decodeBody(response);
+  }
+
+  Future<Map<String, dynamic>> getDevFile(String fileKey) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/dev/file/$fileKey'),
+      headers: _jsonHeaders(requireAuth: true),
+    );
+    _throwIfError(response, 'get dev file');
+    return _decodeBody(response);
+  }
+
+  Future<Map<String, dynamic>> saveDevFile({
+    required String fileKey,
+    required String text,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/dev/file/save'),
+      headers: _jsonHeaders(requireAuth: true),
+      body: jsonEncode({
+        'file_key': fileKey,
+        'text': text,
+      }),
+    );
+    _throwIfError(response, 'save dev file');
+    return _decodeBody(response);
+  }
+
+  Future<Map<String, dynamic>> revertDevFile(String fileKey) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/dev/file/revert-last'),
+      headers: _jsonHeaders(requireAuth: true),
+      body: jsonEncode({'file_key': fileKey}),
+    );
+    _throwIfError(response, 'revert dev file');
+    return _decodeBody(response);
+  }
+
+  Future<Map<String, dynamic>> runDevFileUpdate(String fileKey) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/dev/file/run-update'),
+      headers: _jsonHeaders(requireAuth: true),
+      body: jsonEncode({'file_key': fileKey}),
+    );
+    _throwIfError(response, 'run dev file update');
+    return _decodeBody(response);
+  }
+
   Future<Map<String, dynamic>> getMajors() async {
     final response = await http.get(
       Uri.parse('$baseUrl/get_majors'),
