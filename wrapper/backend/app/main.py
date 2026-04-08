@@ -44,7 +44,10 @@ NLP_MAIN_PATH = NLP_PROJECT_DIR / "main.py"
 DATA_DIR = REPO_ROOT / "data"
 ORGS_PATH = DATA_DIR / "ncsu_orgs.txt"
 CONCENTRATIONS_PATH = DATA_DIR / "concentrations.txt"
-DEFAULT_MAJORS_PATH = REPO_ROOT / "wrapper" / "backend" / "data" / "majors.txt"
+GRAD_PROGRAMS_PATH = DATA_DIR / "grad_programs.txt"
+ABM_PROGRAMS_PATH = DATA_DIR / "abm_programs.txt"
+PHD_PROGRAMS_PATH = DATA_DIR / "phd_programs.txt"
+DEV_BACKUP_DIR = REPO_ROOT / "wrapper" / "backend" / "data" / "dev_file_backups"
 BACKEND_ENV_PATH = REPO_ROOT / "wrapper" / "backend" / ".env"
 
 load_dotenv(BACKEND_ENV_PATH)
@@ -62,6 +65,34 @@ LOGIN_WINDOW_SECONDS = int(os.getenv("WRAPPER_LOGIN_WINDOW_SECONDS", "300"))
 LOGIN_MAX_ATTEMPTS_PER_IP = int(os.getenv("WRAPPER_LOGIN_MAX_ATTEMPTS_PER_IP", "20"))
 LOGIN_MAX_ATTEMPTS_PER_USER = int(os.getenv("WRAPPER_LOGIN_MAX_ATTEMPTS_PER_USER", "10"))
 LOGIN_LOCKOUT_SECONDS = int(os.getenv("WRAPPER_LOGIN_LOCKOUT_SECONDS", "600"))
+
+DEV_EDITABLE_FILES: Dict[str, Dict[str, Any]] = {
+    "ncsu_orgs": {
+        "label": "NCSU Organizations",
+        "path": ORGS_PATH,
+        "script_kind": "orgs",
+    },
+    "concentrations": {
+        "label": "Concentrations",
+        "path": CONCENTRATIONS_PATH,
+        "script_kind": "concentrations",
+    },
+    "abm_programs": {
+        "label": "ABM Programs",
+        "path": ABM_PROGRAMS_PATH,
+        "script_kind": None,
+    },
+    "grad_programs": {
+        "label": "Graduate Programs",
+        "path": GRAD_PROGRAMS_PATH,
+        "script_kind": None,
+    },
+    "phd_programs": {
+        "label": "PhD Programs",
+        "path": PHD_PROGRAMS_PATH,
+        "script_kind": None,
+    },
+}
 
 
 @dataclass
