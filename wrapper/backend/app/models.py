@@ -47,6 +47,15 @@ class SaveMajorsRequest(BaseModel):
     text: str
 
 
+class DevFileSaveRequest(BaseModel):
+    file_key: str
+    text: str
+
+
+class DevFileRequest(BaseModel):
+    file_key: str
+
+
 class ExportAssignmentsRequest(BaseModel):
     rows: List[Dict[str, Any]] = Field(default_factory=list)
     filename: str = "final_assignments.xlsx"
