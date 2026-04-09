@@ -285,6 +285,17 @@ class ApiClient {
     return response.bodyBytes;
   }
 
+  Future<List<int>> exportMentorsXlsx({bool includeInactive = true}) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/mentors/export-xlsx').replace(queryParameters: {
+        'include_inactive': includeInactive ? 'true' : 'false'
+      }),
+      headers: _jsonHeaders(requireAuth: true),
+    );
+    _throwIfError(response, 'export mentors xlsx');
+    return response.bodyBytes;
+  }
+
   Future<Map<String, dynamic>> syncMentorsToDefaultCsv(
       {bool includeInactive = true}) async {
     final response = await http.post(
@@ -306,7 +317,7 @@ class ApiClient {
       headers: _jsonHeaders(requireAuth: true),
       body: '{}',
     );
-    _throwIfError(response, 'queue linkedin enrichment');
+    _throwIfError(response, 'linkedin enrichment');
     return _decodeBody(response);
   }
 
@@ -381,6 +392,15 @@ class ApiClient {
       body: jsonEncode({'file_key': fileKey}),
     );
     _throwIfError(response, 'run dev file update');
+    return _decodeBody(response);
+  }
+
+  Future<Map<String, dynamic>> getDevMatchingState() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/dev/matching-state'),
+      headers: _jsonHeaders(requireAuth: true),
+    );
+    _throwIfError(response, 'get dev matching state');
     return _decodeBody(response);
   }
 

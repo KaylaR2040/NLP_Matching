@@ -30,10 +30,12 @@ class MentorCardState {
   final String mentorId;
   final String mentorName;
   final List<String> menteeIds;
+  int maxMentees;
 
   MentorCardState({
     required this.mentorId,
     required this.mentorName,
+    this.maxMentees = 1,
     List<String>? menteeIds,
   }) : menteeIds = menteeIds ?? [];
 }

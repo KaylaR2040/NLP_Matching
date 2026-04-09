@@ -55,18 +55,26 @@ class _DevDashboardScreenState extends State<DevDashboardScreen> {
 
   bool _busy = false;
   bool _dirty = false;
+  bool _loadingMatchingState = false;
   bool _syncingText = false;
   String _status = 'Loading editable files...';
+  String _matchingStateError = '';
 
   List<_DevFileMeta> _files = const [];
   String? _selectedFileKey;
   _DevFileMeta? _selectedFileMeta;
+  String _matchingStatePath = '';
+  List<Map<String, String>> _rejectedPairs = const [];
+  List<Map<String, String>> _lockedPairs = const [];
+  List<String> _excludedMenteeIds = const [];
+  List<String> _excludedMentorIds = const [];
 
   @override
   void initState() {
     super.initState();
     _editorController.addListener(_onEditorChanged);
     _loadFileList();
+    _loadMatchingState();
   }
 
   @override
@@ -373,54 +381,95 @@ class _DevDashboardScreenState extends State<DevDashboardScreen> {
         _loadSelectedFile);
   }
 
+  Future<void> _loadMatchingState() async {
+    setState(() {
+      _loadingMatchingState = true;
+      _matchingStateError = '';
+    });
+
+    try {
+      final response = await widget.apiClient.getDevMatchingState();
+      final rejected = (response['rejected_pairs'] as List? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map((row) => {
+                'mentee_id': (row['mentee_id'] ?? '').toString(),
+                'mentor_id': (row['mentor_id'] ?? '').toString(),
+              })
+          .toList();
+      final locked = (response['locked_pairs'] as List? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map((row) => {
+                'mentee_id': (row['mentee_id'] ?? '').toString(),
+                'mentor_id': (row['mentor_id'] ?? '').toString(),
+              })
+          .toList();
+
+      setState(() {
+        _matchingStatePath = (response['path'] ?? '').toString();
+        _rejectedPairs = rejected;
+        _lockedPairs = locked;
+        _excludedMenteeIds = (response['excluded_mentee_ids'] as List? ?? const [])
+            .map((item) => item.toString())
+            .where((item) => item.trim().isNotEmpty)
+            .toList();
+        _excludedMentorIds = (response['excluded_mentor_ids'] as List? ?? const [])
+            .map((item) => item.toString())
+            .where((item) => item.trim().isNotEmpty)
+            .toList();
+      });
+    } on ApiUnauthorizedException {
+      if (!mounted) {
+        return;
+      }
+      widget.onAuthExpired();
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _matchingStateError = '$e');
+    } finally {
+      if (mounted) {
+        setState(() => _loadingMatchingState = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final selected = _selectedFileMeta;
 
-    return PopScope(
-      canPop: !_dirty,
-      onPopInvokedWithResult: (didPop, _result) {
-        if (didPop) {
-          return;
-        }
-        _maybeHandleUnsavedChanges().then((proceed) {
-          if (proceed && mounted) {
-            Navigator.of(context).pop();
-          }
-        });
-      },
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Dev Dashboard'),
-          foregroundColor: NCSUColors.wolfpackWhite,
-          actions: [
-            TextButton.icon(
-              onPressed: _busy
-                  ? null
-                  : () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => MentorManagerScreen(
-                            apiClient: widget.apiClient,
-                            onAuthExpired: widget.onAuthExpired,
-                          ),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Dev Dashboard'),
+        foregroundColor: NCSUColors.wolfpackWhite,
+        actions: [
+          TextButton.icon(
+            onPressed: _busy
+                ? null
+                : () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => MentorManagerScreen(
+                          apiClient: widget.apiClient,
+                          onAuthExpired: widget.onAuthExpired,
                         ),
-                      );
-                    },
-              icon: const Icon(Icons.manage_accounts_outlined,
-                  color: Colors.white),
-              label: const Text(
-                'Mentor Manager',
-                style: TextStyle(color: Colors.white),
-              ),
+                      ),
+                    );
+                  },
+            icon: const Icon(Icons.manage_accounts_outlined, color: Colors.white),
+            label: const Text(
+              'Mentor Manager',
+              style: TextStyle(color: Colors.white),
             ),
-          ],
-        ),
-        body: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+          ),
+        ],
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
               Wrap(
                 spacing: 10,
                 runSpacing: 10,
@@ -496,6 +545,70 @@ class _DevDashboardScreenState extends State<DevDashboardScreen> {
                 ),
               ),
               const SizedBox(height: 12),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              'Current Exclusion / Lock State',
+                              style: TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: _loadingMatchingState
+                                ? null
+                                : _loadMatchingState,
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Refresh'),
+                          ),
+                        ],
+                      ),
+                      if (_matchingStatePath.isNotEmpty)
+                        Text(
+                          'State file: $_matchingStatePath',
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: Colors.black87),
+                        ),
+                      const SizedBox(height: 6),
+                      if (_loadingMatchingState)
+                        const LinearProgressIndicator()
+                      else if (_matchingStateError.isNotEmpty)
+                        Text(
+                          'Unable to load exclusion state: $_matchingStateError',
+                          style: TextStyle(color: Colors.red.shade700),
+                        )
+                      else
+                        Wrap(
+                          spacing: 16,
+                          runSpacing: 8,
+                          children: [
+                            Text('Rejected pairs: ${_rejectedPairs.length}'),
+                            Text('Locked pairs: ${_lockedPairs.length}'),
+                            Text(
+                                'Excluded mentees: ${_excludedMenteeIds.length}'),
+                            Text(
+                                'Excluded mentors: ${_excludedMentorIds.length}'),
+                          ],
+                        ),
+                      if (_rejectedPairs.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          'Rejected pairs: ${_rejectedPairs.take(8).map((pair) => "${pair['mentee_id']} -> ${pair['mentor_id']}").join(' | ')}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
               if (selected != null)
                 Text(
                   '${selected.path} • ${selected.lineCount} non-empty lines',
@@ -530,14 +643,13 @@ class _DevDashboardScreenState extends State<DevDashboardScreen> {
               const SizedBox(height: 8),
               if (_dirty)
                 Text(
-                  'Unsaved changes present. Save is required before leaving this page or switching files.',
+                  'Unsaved changes present. Save to keep your edits.',
                   style: Theme.of(context)
                       .textTheme
                       .bodySmall
                       ?.copyWith(color: NCSUColors.reynoldsRed),
                 ),
-            ],
-          ),
+          ],
         ),
       ),
     );

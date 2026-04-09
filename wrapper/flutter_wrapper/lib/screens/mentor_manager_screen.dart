@@ -27,6 +27,7 @@ class _MentorManagerScreenState extends State<MentorManagerScreen> {
   bool _loading = false;
   String _status = 'Loading mentors...';
   List<MentorRecord> _mentors = const [];
+  final Set<String> _enrichingMentorIds = <String>{};
 
   @override
   void initState() {
@@ -84,7 +85,12 @@ class _MentorManagerScreenState extends State<MentorManagerScreen> {
       context: context,
       barrierDismissible: false,
       builder: (context) {
-        return _MentorEditorDialog(initial: mentor);
+        return _MentorEditorDialog(
+          initial: mentor,
+          apiClient: widget.apiClient,
+          onAuthExpired: widget.onAuthExpired,
+          onMentorEnriched: _applyMentorEnrichedUpdate,
+        );
       },
     );
     if (result == null) {
@@ -169,11 +175,38 @@ class _MentorManagerScreenState extends State<MentorManagerScreen> {
     }
   }
 
-  Future<void> _enqueueEnrichment(MentorRecord mentor) async {
+  void _applyMentorEnrichedUpdate(MentorRecord updated) {
+    setState(() {
+      _mentors = _mentors
+          .map((mentor) =>
+              mentor.mentorId == updated.mentorId ? updated : mentor)
+          .toList();
+      _status = 'Updated ${updated.fullName} from LinkedIn.';
+    });
+  }
+
+  Future<void> _updateFromLinkedIn(MentorRecord mentor) async {
+    if (mentor.linkedInUrl.trim().isEmpty) {
+      _showSnack('No LinkedIn URL found for ${mentor.fullName}.',
+          isError: true);
+      return;
+    }
+    setState(() => _enrichingMentorIds.add(mentor.mentorId));
     try {
       final response = await widget.apiClient
           .enqueueMentorLinkedInEnrichment(mentor.mentorId);
-      _showSnack(response['message']?.toString() ?? 'Enrichment queued.');
+      final status = (response['enrichment_status'] ?? '').toString();
+      final message = (response['message'] ?? 'LinkedIn enrichment completed.')
+          .toString();
+      final mentorJson = response['mentor'];
+      if (mentorJson is Map<String, dynamic>) {
+        _applyMentorEnrichedUpdate(MentorRecord.fromJson(mentorJson));
+      }
+      if (status == 'success' || status == 'partial') {
+        _showSnack(message);
+      } else {
+        _showSnack(message, isError: true);
+      }
       await _loadMentors();
     } on ApiUnauthorizedException {
       if (!mounted) {
@@ -182,7 +215,11 @@ class _MentorManagerScreenState extends State<MentorManagerScreen> {
       widget.onAuthExpired();
       Navigator.of(context).pop();
     } catch (e) {
-      _showSnack('Enrichment queue failed: $e', isError: true);
+      _showSnack('LinkedIn update failed: $e', isError: true);
+    } finally {
+      if (mounted) {
+        setState(() => _enrichingMentorIds.remove(mentor.mentorId));
+      }
     }
   }
 
@@ -224,20 +261,20 @@ class _MentorManagerScreenState extends State<MentorManagerScreen> {
     }
   }
 
-  Future<void> _exportCsv() async {
+  Future<void> _exportXlsx() async {
     try {
       final bytes =
-          await widget.apiClient.exportMentorsCsv(includeInactive: true);
+          await widget.apiClient.exportMentorsXlsx(includeInactive: true);
       final blob = html.Blob([bytes]);
       final url = html.Url.createObjectUrlFromBlob(blob);
       final anchor = html.AnchorElement(href: url)
-        ..download = 'mentor_real_export.csv'
+        ..download = 'mentor_real_export.xlsx'
         ..style.display = 'none';
       html.document.body?.children.add(anchor);
       anchor.click();
       anchor.remove();
       html.Url.revokeObjectUrl(url);
-      _showSnack('Exported mentor_real_export.csv');
+      _showSnack('Exported mentor_real_export.xlsx');
     } on ApiUnauthorizedException {
       if (!mounted) {
         return;
@@ -245,7 +282,7 @@ class _MentorManagerScreenState extends State<MentorManagerScreen> {
       widget.onAuthExpired();
       Navigator.of(context).pop();
     } catch (e) {
-      _showSnack('Export failed: $e', isError: true);
+      _showSnack('XLSX export failed: $e', isError: true);
     }
   }
 
@@ -298,6 +335,20 @@ class _MentorManagerScreenState extends State<MentorManagerScreen> {
     return missing.join(', ');
   }
 
+  String _initialsFor(MentorRecord mentor) {
+    final parts = [mentor.firstName, mentor.lastName]
+        .where((part) => part.trim().isNotEmpty)
+        .toList();
+    if (parts.isNotEmpty) {
+      return parts
+          .map((part) => part.trim().characters.first.toUpperCase())
+          .join('')
+          .substring(0, parts.length > 1 ? 2 : 1);
+    }
+    final fallback = mentor.fullName.trim().isNotEmpty ? mentor.fullName : mentor.email;
+    return fallback.characters.first.toUpperCase();
+  }
+
   List<DataRow> _buildRows() {
     return _mentors.map((mentor) {
       final missing = _missingSummary(mentor);
@@ -306,12 +357,31 @@ class _MentorManagerScreenState extends State<MentorManagerScreen> {
           : [mentor.currentCity.trim(), mentor.currentState.trim()]
               .where((value) => value.isNotEmpty)
               .join(', ');
+      final hasLinkedIn = mentor.linkedInUrl.trim().isNotEmpty;
+      final hasPhoto = mentor.profilePhotoUrl.trim().isNotEmpty;
+      final isEnriching = _enrichingMentorIds.contains(mentor.mentorId);
 
       return DataRow(
         cells: [
-          DataCell(Text(mentor.fullName.trim().isNotEmpty
-              ? mentor.fullName
-              : mentor.email)),
+          DataCell(
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 16,
+                  backgroundImage:
+                      hasPhoto ? NetworkImage(mentor.profilePhotoUrl) : null,
+                  child: hasPhoto ? null : Text(_initialsFor(mentor)),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  mentor.fullName.trim().isNotEmpty
+                      ? mentor.fullName
+                      : mentor.email,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
           DataCell(Text(
               mentor.currentCompany.isEmpty ? '-' : mentor.currentCompany)),
           DataCell(Text(
@@ -321,6 +391,8 @@ class _MentorManagerScreenState extends State<MentorManagerScreen> {
           DataCell(Text(mentor.isActive ? 'Active' : 'Inactive')),
           DataCell(Text(
               mentor.lastModifiedAt.isEmpty ? '-' : mentor.lastModifiedAt)),
+          DataCell(Text(
+              mentor.lastEnrichedAt.isEmpty ? '-' : mentor.lastEnrichedAt)),
           DataCell(
             Row(
               children: [
@@ -336,9 +408,21 @@ class _MentorManagerScreenState extends State<MentorManagerScreen> {
                   icon: const Icon(Icons.person_off_outlined),
                 ),
                 IconButton(
-                  tooltip: 'Queue LinkedIn Enrichment',
-                  onPressed: _loading ? null : () => _enqueueEnrichment(mentor),
-                  icon: const Icon(Icons.auto_awesome_outlined),
+                  tooltip: hasLinkedIn
+                      ? (isEnriching
+                          ? 'Updating from LinkedIn...'
+                          : 'Update from LinkedIn')
+                      : 'LinkedIn URL required',
+                  onPressed: (_loading || isEnriching || !hasLinkedIn)
+                      ? null
+                      : () => _updateFromLinkedIn(mentor),
+                  icon: isEnriching
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.auto_awesome_outlined),
                 ),
               ],
             ),
@@ -404,14 +488,22 @@ class _MentorManagerScreenState extends State<MentorManagerScreen> {
                       label: const Text('Import CSV'),
                     ),
                     OutlinedButton.icon(
-                      onPressed: _loading ? null : _exportCsv,
+                      onPressed: _loading ? null : _exportXlsx,
                       icon: const Icon(Icons.download),
-                      label: const Text('Export CSV'),
+                      label: const Text('Export XLSX'),
                     ),
                     OutlinedButton.icon(
                       onPressed: _loading ? null : _syncToCanonicalCsv,
                       icon: const Icon(Icons.sync),
                       label: const Text('Sync To mentor_real.csv'),
+                    ),
+                    Tooltip(
+                      message: 'Bulk LinkedIn update is planned for a follow-up iteration.',
+                      child: OutlinedButton.icon(
+                        onPressed: null,
+                        icon: const Icon(Icons.auto_fix_high_outlined),
+                        label: const Text('Update selected from LinkedIn'),
+                      ),
                     ),
                   ],
                 ),
@@ -443,6 +535,7 @@ class _MentorManagerScreenState extends State<MentorManagerScreen> {
                                   DataColumn(label: Text('LinkedIn')),
                                   DataColumn(label: Text('Status')),
                                   DataColumn(label: Text('Last Updated')),
+                                  DataColumn(label: Text('Last LinkedIn Sync')),
                                   DataColumn(label: Text('Actions')),
                                   DataColumn(label: Text('Completeness')),
                                 ],
@@ -461,9 +554,15 @@ class _MentorManagerScreenState extends State<MentorManagerScreen> {
 
 class _MentorEditorDialog extends StatefulWidget {
   final MentorRecord? initial;
+  final ApiClient apiClient;
+  final VoidCallback onAuthExpired;
+  final void Function(MentorRecord updated)? onMentorEnriched;
 
   const _MentorEditorDialog({
     required this.initial,
+    required this.apiClient,
+    required this.onAuthExpired,
+    this.onMentorEnriched,
   });
 
   @override
@@ -493,6 +592,8 @@ class _MentorEditorDialogState extends State<_MentorEditorDialog> {
 
   bool _isActive = true;
   bool _dirty = false;
+  bool _enriching = false;
+  String _lastEnrichedAt = '';
   late Map<String, dynamic> _initialSnapshot;
 
   @override
@@ -526,6 +627,7 @@ class _MentorEditorDialogState extends State<_MentorEditorDialog> {
     _preferredContactController =
         TextEditingController(text: record?.preferredContactMethod ?? '');
     _isActive = record?.isActive ?? true;
+    _lastEnrichedAt = record?.lastEnrichedAt ?? '';
 
     _initialSnapshot = _snapshot();
     _controllers
@@ -654,11 +756,7 @@ class _MentorEditorDialogState extends State<_MentorEditorDialog> {
     }
   }
 
-  void _save() {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
-
+  MentorRecord _recordFromFields({MentorRecord? seed}) {
     final firstName = _firstNameController.text.trim();
     final lastName = _lastNameController.text.trim();
     final email = _emailController.text.trim();
@@ -667,8 +765,8 @@ class _MentorEditorDialogState extends State<_MentorEditorDialog> {
         .join(' ')
         .trim();
 
-    final existing = widget.initial;
-    final mentor = MentorRecord(
+    final existing = seed ?? widget.initial;
+    return MentorRecord(
       mentorId: existing?.mentorId ?? email,
       email: email,
       firstName: firstName,
@@ -699,8 +797,110 @@ class _MentorEditorDialogState extends State<_MentorEditorDialog> {
       enrichmentStatus: existing?.enrichmentStatus ?? '',
       extraFields: existing?.extraFields ?? const {},
     );
+  }
 
-    Navigator.of(context).pop(mentor);
+  void _applyRecordToControllers(MentorRecord mentor, {bool resetSnapshot = true}) {
+    _emailController.text = mentor.email;
+    _firstNameController.text = mentor.firstName;
+    _lastNameController.text = mentor.lastName;
+    _linkedInController.text = mentor.linkedInUrl;
+    _photoController.text = mentor.profilePhotoUrl;
+    _companyController.text = mentor.currentCompany;
+    _titleController.text = mentor.currentJobTitle;
+    _locationController.text = mentor.currentLocation;
+    _cityController.text = mentor.currentCity;
+    _stateController.text = mentor.currentState;
+    _degreesController.text = mentor.degreesText;
+    _industryController.text = mentor.industryFocusArea;
+    _experienceController.text = mentor.professionalExperience;
+    _aboutController.text = mentor.aboutYourself;
+    _studentsController.text = '${mentor.studentsInterested}';
+    _phoneController.text = mentor.phone;
+    _preferredContactController.text = mentor.preferredContactMethod;
+    _isActive = mentor.isActive;
+    _lastEnrichedAt = mentor.lastEnrichedAt;
+    if (resetSnapshot) {
+      _initialSnapshot = _snapshot();
+      _dirty = false;
+    } else {
+      _onFieldChanged();
+    }
+  }
+
+  Future<void> _updateFromLinkedIn() async {
+    final existing = widget.initial;
+    if (existing == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Save this mentor first, then run LinkedIn update.')),
+      );
+      return;
+    }
+
+    if (_dirty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Save or discard current edits before LinkedIn update.')),
+      );
+      return;
+    }
+
+    if (_linkedInController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('LinkedIn URL is required before update.')),
+      );
+      return;
+    }
+
+    setState(() => _enriching = true);
+    try {
+      final response = await widget.apiClient
+          .enqueueMentorLinkedInEnrichment(existing.mentorId);
+      final status = (response['enrichment_status'] ?? '').toString();
+      final message = (response['message'] ?? 'LinkedIn update completed.').toString();
+      final mentorJson = response['mentor'];
+      if (mentorJson is Map<String, dynamic>) {
+        final updated = MentorRecord.fromJson(mentorJson);
+        _applyRecordToControllers(updated, resetSnapshot: true);
+        widget.onMentorEnriched?.call(updated);
+      }
+
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor:
+              (status == 'success' || status == 'partial') ? null : Colors.red.shade700,
+        ),
+      );
+    } on ApiUnauthorizedException {
+      if (!mounted) {
+        return;
+      }
+      widget.onAuthExpired();
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('LinkedIn update failed: $e'),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _enriching = false);
+      }
+    }
+  }
+
+  void _save() {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+    Navigator.of(context).pop(_recordFromFields());
   }
 
   Widget _textField({
@@ -785,6 +985,43 @@ class _MentorEditorDialogState extends State<_MentorEditorDialog> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 8),
+                  if (widget.initial != null)
+                    Row(
+                      children: [
+                        Tooltip(
+                          message: _linkedInController.text.trim().isEmpty
+                              ? 'LinkedIn URL required'
+                              : (_dirty
+                                  ? 'Save/discard unsaved edits before update'
+                                  : 'Pull latest profile details from LinkedIn provider'),
+                          child: ElevatedButton.icon(
+                            onPressed: (_enriching ||
+                                    _linkedInController.text.trim().isEmpty ||
+                                    _dirty)
+                                ? null
+                                : _updateFromLinkedIn,
+                            icon: _enriching
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child:
+                                        CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.auto_awesome_outlined),
+                            label: Text(
+                                _enriching ? 'Updating...' : 'Update from LinkedIn'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Last updated from LinkedIn: ${_lastEnrichedAt.isNotEmpty ? _lastEnrichedAt : '-'}',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
+                      ],
+                    ),
                   const SizedBox(height: 10),
                   Wrap(
                     spacing: 10,
@@ -915,11 +1152,11 @@ class _MentorEditorDialogState extends State<_MentorEditorDialog> {
         ),
         actions: [
           TextButton(
-            onPressed: _attemptDismiss,
+            onPressed: _enriching ? null : _attemptDismiss,
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: _save,
+            onPressed: _enriching ? null : _save,
             child: const Text('Save'),
           ),
         ],

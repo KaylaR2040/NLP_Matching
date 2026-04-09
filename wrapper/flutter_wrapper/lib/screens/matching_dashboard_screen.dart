@@ -126,6 +126,8 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
   void _applyBackendResult(Map<String, dynamic> result) {
     final assignments = (result['assignments'] as List? ?? const []);
     final rankedPairs = (result['top_ranked_pairs'] as List? ?? const []);
+    final capacityByMentor =
+        (result['mentor_capacity'] as Map<String, dynamic>? ?? const {});
 
     _mentorsById.clear();
     _menteesById.clear();
@@ -157,12 +159,23 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
       ensureMentor(row);
       ensureMentee(row);
       _setPairPercentFromRow(row);
+      _applyMentorCapacityFromRow(row);
     }
     for (final row in assignments) {
       ensureMentor(row);
       ensureMentee(row);
       _setPairPercentFromRow(row);
+      _applyMentorCapacityFromRow(row);
     }
+
+    capacityByMentor.forEach((mentorId, details) {
+      final id = mentorId.toString();
+      if (!_mentorsById.containsKey(id) || details is! Map<String, dynamic>) {
+        return;
+      }
+      final parsed = int.tryParse('${details['max_mentees'] ?? 1}') ?? 1;
+      _mentorsById[id]!.maxMentees = parsed < 1 ? 1 : parsed;
+    });
 
     final assigned = <String>{};
     for (final row in assignments) {
@@ -181,6 +194,18 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
         _unmatchedMenteeIds.add(menteeId);
       }
     }
+  }
+
+  void _applyMentorCapacityFromRow(dynamic row) {
+    if (row is! Map<String, dynamic>) {
+      return;
+    }
+    final mentorId = (row['mentor_id'] ?? '').toString();
+    if (mentorId.isEmpty || !_mentorsById.containsKey(mentorId)) {
+      return;
+    }
+    final parsed = int.tryParse('${row['mentor_capacity'] ?? 1}') ?? 1;
+    _mentorsById[mentorId]!.maxMentees = parsed < 1 ? 1 : parsed;
   }
 
   void _setPairPercentFromRow(dynamic row) {
@@ -469,6 +494,14 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
                 Text(mentor.mentorName,
                     style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 6),
+                Text(
+                  'Capacity: ${mentor.menteeIds.length}/${mentor.maxMentees} mentees',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.black87,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+                const SizedBox(height: 4),
                 Text(
                   mentor.mentorId,
                   style: Theme.of(context)
