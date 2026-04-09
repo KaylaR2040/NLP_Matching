@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import csv
 from collections import defaultdict, deque
 import hashlib
 import hmac
@@ -14,7 +15,7 @@ import sys
 import tempfile
 import time
 from dataclasses import dataclass
-from io import BytesIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from typing import Any, Deque, Dict, Iterable, List, Optional, Set, Tuple
 
@@ -43,6 +44,7 @@ from .models import (
     SaveMajorsRequest,
     ScriptRequest,
 )
+from .linkedin_enrichment import build_linkedin_enrichment_service_from_env
 from .mentor_store import DEFAULT_MENTOR_BACKUP_DIR, DEFAULT_MENTOR_STORE_PATH, MentorStore
 
 
@@ -59,6 +61,7 @@ DEFAULT_MAJORS_PATH = GRAD_PROGRAMS_PATH
 DEV_BACKUP_DIR = REPO_ROOT / "wrapper" / "backend" / "data" / "dev_file_backups"
 BACKEND_ENV_PATH = REPO_ROOT / "wrapper" / "backend" / ".env"
 DEFAULT_MENTOR_SOURCE_CSV = REPO_ROOT / "nlp_project" / "data" / "mentor_real.csv"
+DEFAULT_MATCHING_STATE_PATH = REPO_ROOT / "nlp_project" / "state" / "matching_state.json"
 
 load_dotenv(BACKEND_ENV_PATH)
 
@@ -84,6 +87,9 @@ MENTOR_BACKUP_DIR = Path(
 ).expanduser()
 MENTOR_SOURCE_CSV_PATH = Path(
     os.getenv("WRAPPER_MENTOR_SOURCE_CSV_PATH", str(DEFAULT_MENTOR_SOURCE_CSV))
+).expanduser()
+MATCHING_STATE_PATH = Path(
+    os.getenv("WRAPPER_MATCHING_STATE_PATH", str(DEFAULT_MATCHING_STATE_PATH))
 ).expanduser()
 
 DEV_EDITABLE_FILES: Dict[str, Dict[str, Any]] = {
@@ -152,6 +158,7 @@ FAILED_ATTEMPTS_BY_USER: Dict[str, LoginRateBucket] = defaultdict(
 )
 LOG = logging.getLogger("wrapper.auth")
 MENTOR_STORE = MentorStore(store_path=MENTOR_STORE_PATH, backup_dir=MENTOR_BACKUP_DIR)
+LINKEDIN_ENRICHMENT = build_linkedin_enrichment_service_from_env()
 
 
 app = FastAPI(title="NLP Mentor Matcher Wrapper API", version="1.0.0")
@@ -393,7 +400,11 @@ def _backup_current_file(path: Path, file_key: str) -> Optional[Path]:
 def _write_text_file_with_backup(path: Path, text: str, file_key: str) -> Dict[str, Any]:
     backup_path = _backup_current_file(path, file_key)
     payload = _write_text_file(path, text)
-    payload["backup_path"] = str(backup_path) if backup_path else None
+    payload["backup_path"] = (
+        _normalize_repo_path_for_api(str(backup_path), fallback="")
+        if backup_path
+        else None
+    )
     return payload
 
 
@@ -418,7 +429,7 @@ def _revert_file_from_latest_backup(file_key: str) -> Dict[str, Any]:
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(latest, target)
     payload = _read_text_file(target)
-    payload["reverted_from"] = str(latest)
+    payload["reverted_from"] = _normalize_repo_path_for_api(str(latest), fallback="")
     return payload
 
 
@@ -530,7 +541,7 @@ def _run_script(script_path: Path, args: Optional[List[str]] = None) -> Dict[str
             status_code=500,
             detail={
                 "message": "Script execution failed",
-                "script": str(script_path),
+                "script": _normalize_repo_path_for_api(str(script_path), fallback=script_path.name),
                 "stdout": completed.stdout,
                 "stderr": completed.stderr,
             },
@@ -538,7 +549,7 @@ def _run_script(script_path: Path, args: Optional[List[str]] = None) -> Dict[str
 
     return {
         "status": "ok",
-        "script": str(script_path),
+        "script": _normalize_repo_path_for_api(str(script_path), fallback=script_path.name),
         "command": cmd,
         "stdout": completed.stdout,
     }
@@ -561,7 +572,11 @@ def _read_text_file(path: Path) -> Dict[str, Any]:
         path.write_text("", encoding="utf-8")
     text = path.read_text(encoding="utf-8")
     line_count = len([line for line in text.splitlines() if line.strip()])
-    return {"path": str(path), "text": text, "line_count": line_count}
+    return {
+        "path": _normalize_repo_path_for_api(str(path)),
+        "text": text,
+        "line_count": line_count,
+    }
 
 
 def _write_text_file(path: Path, text: str) -> Dict[str, Any]:
@@ -569,7 +584,11 @@ def _write_text_file(path: Path, text: str) -> Dict[str, Any]:
     normalized = text.replace("\r\n", "\n")
     path.write_text(normalized, encoding="utf-8")
     line_count = len([line for line in normalized.splitlines() if line.strip()])
-    return {"status": "ok", "path": str(path), "line_count": line_count}
+    return {
+        "status": "ok",
+        "path": _normalize_repo_path_for_api(str(path)),
+        "line_count": line_count,
+    }
 
 
 def _model_dict(instance: Any, *, exclude_unset: bool = False) -> Dict[str, Any]:
@@ -582,7 +601,7 @@ def _bool_match(value: str, term: str) -> bool:
     return term in value.lower()
 
 
-def _normalize_source_path_for_api(path_value: str, *, fallback: str = "nlp_project/data/mentor_real.csv") -> str:
+def _normalize_repo_path_for_api(path_value: str, *, fallback: str = "") -> str:
     if not path_value:
         return fallback
     value = Path(path_value)
@@ -593,10 +612,157 @@ def _normalize_source_path_for_api(path_value: str, *, fallback: str = "nlp_proj
         return value.name
 
 
+def _normalize_source_path_for_api(path_value: str, *, fallback: str = "nlp_project/data/mentor_real.csv") -> str:
+    return _normalize_repo_path_for_api(path_value, fallback=fallback)
+
+
 def _mentor_record_for_api(record: Dict[str, Any]) -> Dict[str, Any]:
     payload = dict(record)
     payload["source_csv_path"] = _normalize_source_path_for_api(str(payload.get("source_csv_path", "")))
+    payload.pop("enrichment_provider_metadata", None)
     return payload
+
+
+def _parse_pair_rows_for_api(pairs: Iterable[Any]) -> List[Dict[str, str]]:
+    rows: List[Dict[str, str]] = []
+    for pair in pairs:
+        mentee_id = ""
+        mentor_id = ""
+        if isinstance(pair, str) and "::" in pair:
+            left, right = pair.split("::", 1)
+            mentee_id = left.strip()
+            mentor_id = right.strip()
+        elif isinstance(pair, dict):
+            mentee_id = str(pair.get("mentee_id", "")).strip()
+            mentor_id = str(pair.get("mentor_id", "")).strip()
+        elif isinstance(pair, (list, tuple)) and len(pair) >= 2:
+            mentee_id = str(pair[0]).strip()
+            mentor_id = str(pair[1]).strip()
+        if mentee_id and mentor_id:
+            rows.append(
+                {
+                    "mentee_id": mentee_id,
+                    "mentor_id": mentor_id,
+                }
+            )
+    return rows
+
+
+def _load_matching_state_for_api(state_path: Path) -> Dict[str, Any]:
+    if not state_path.exists():
+        return {
+            "path": _normalize_repo_path_for_api(str(state_path)),
+            "excluded_mentee_ids": [],
+            "excluded_mentor_ids": [],
+            "rejected_pairs": [],
+            "locked_pairs": [],
+            "counts": {
+                "excluded_mentee_ids": 0,
+                "excluded_mentor_ids": 0,
+                "rejected_pairs": 0,
+                "locked_pairs": 0,
+            },
+        }
+
+    try:
+        payload = json.loads(state_path.read_text(encoding="utf-8"))
+    except Exception:
+        payload = {}
+
+    excluded_mentee_ids = [str(item).strip() for item in payload.get("excluded_mentee_ids", []) if str(item).strip()]
+    excluded_mentor_ids = [str(item).strip() for item in payload.get("excluded_mentor_ids", []) if str(item).strip()]
+    rejected_pairs = _parse_pair_rows_for_api(payload.get("rejected_pairs", []))
+    locked_pairs = _parse_pair_rows_for_api(payload.get("locked_pairs", []))
+
+    return {
+        "path": _normalize_repo_path_for_api(str(state_path)),
+        "excluded_mentee_ids": excluded_mentee_ids,
+        "excluded_mentor_ids": excluded_mentor_ids,
+        "rejected_pairs": rejected_pairs,
+        "locked_pairs": locked_pairs,
+        "counts": {
+            "excluded_mentee_ids": len(excluded_mentee_ids),
+            "excluded_mentor_ids": len(excluded_mentor_ids),
+            "rejected_pairs": len(rejected_pairs),
+            "locked_pairs": len(locked_pairs),
+        },
+    }
+
+
+def _extract_mentor_capacity_map(mentor_csv_path: Path) -> Dict[str, int]:
+    try:
+        if str(NLP_PROJECT_DIR) not in sys.path:
+            sys.path.insert(0, str(NLP_PROJECT_DIR))
+        from mentor_matching.parsing import parse_mentor_csv  # type: ignore
+
+        mentors = parse_mentor_csv(mentor_csv_path)
+        capacities: Dict[str, int] = {}
+        for mentor in mentors:
+            mentor_id = str(getattr(mentor, "mentor_id", "")).strip()
+            if not mentor_id:
+                continue
+            raw_capacity = getattr(mentor, "max_mentees", 1)
+            try:
+                capacity = max(1, int(raw_capacity))
+            except (TypeError, ValueError):
+                capacity = 1
+            capacities[mentor_id] = capacity
+        return capacities
+    except Exception as exc:
+        LOG.warning("mentor_capacity_parse_failed path=%s error=%s", mentor_csv_path, exc)
+        return {}
+
+
+def _attach_mentor_capacity_metadata(result: Dict[str, Any], capacities: Dict[str, int]) -> None:
+    assignments = result.get("assignments")
+    ranked_pairs = result.get("top_ranked_pairs")
+    if not isinstance(assignments, list) or not isinstance(ranked_pairs, list):
+        return
+
+    assigned_count: Dict[str, int] = defaultdict(int)
+    mentor_ids: Set[str] = set()
+    for row in assignments:
+        if not isinstance(row, dict):
+            continue
+        mentor_id = str(row.get("mentor_id", "")).strip()
+        if not mentor_id:
+            continue
+        assigned_count[mentor_id] += 1
+        mentor_ids.add(mentor_id)
+
+    for row in ranked_pairs:
+        if not isinstance(row, dict):
+            continue
+        mentor_id = str(row.get("mentor_id", "")).strip()
+        if mentor_id:
+            mentor_ids.add(mentor_id)
+
+    summary: Dict[str, Dict[str, int]] = {}
+    for mentor_id in mentor_ids:
+        cap = capacities.get(mentor_id)
+        if cap is None:
+            cap = max(1, assigned_count.get(mentor_id, 1))
+        assigned = assigned_count.get(mentor_id, 0)
+        summary[mentor_id] = {
+            "max_mentees": max(1, int(cap)),
+            "assigned_count": assigned,
+            "remaining_slots": max(int(cap) - assigned, 0),
+        }
+
+    for row in [*assignments, *ranked_pairs]:
+        if not isinstance(row, dict):
+            continue
+        mentor_id = str(row.get("mentor_id", "")).strip()
+        if not mentor_id:
+            continue
+        capacity = summary.get(mentor_id)
+        if capacity is None:
+            continue
+        row["mentor_capacity"] = capacity["max_mentees"]
+        row["mentor_assigned_count"] = capacity["assigned_count"]
+        row["mentor_remaining_slots"] = capacity["remaining_slots"]
+
+    result["mentor_capacity"] = summary
 
 
 @app.get("/health")
@@ -779,6 +945,29 @@ def export_mentors_csv(
     return StreamingResponse(output, media_type="text/csv; charset=utf-8", headers=headers)
 
 
+@app.get("/mentors/export-xlsx")
+def export_mentors_xlsx(
+    include_inactive: bool = True,
+    _session: AuthSession = Depends(_require_auth()),
+) -> StreamingResponse:
+    export_payload = MENTOR_STORE.export_csv(include_inactive=include_inactive)
+    csv_text = str(export_payload["csv_text"])
+    columns = [str(item) for item in export_payload.get("columns", [])]
+    reader = csv.DictReader(StringIO(csv_text))
+    rows = [dict(row) for row in reader]
+    frame = pd.DataFrame(rows, columns=columns if columns else None)
+
+    output = BytesIO()
+    frame.to_excel(output, index=False)
+    output.seek(0)
+    headers = {"Content-Disposition": "attachment; filename=mentor_real_export.xlsx"}
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers,
+    )
+
+
 @app.post("/mentors/sync-to-default-csv", response_model=MentorSyncResponse)
 def sync_mentors_to_default_csv(
     include_inactive: bool = True,
@@ -862,18 +1051,71 @@ def enqueue_linkedin_enrichment(
     record = MENTOR_STORE.get_by_id(mentor_id)
     if record is None:
         raise HTTPException(status_code=404, detail=f"Mentor '{mentor_id}' was not found")
+    linkedin_url = str(record.get("linkedin_url", "")).strip()
+    if not linkedin_url:
+        return MentorEnrichmentResponse(
+            mentor_id=mentor_id,
+            enrichment_status="failed",
+            message="Mentor has no LinkedIn URL. Add one before enrichment.",
+            updated_fields=[],
+            mentor=MentorRecord(**_mentor_record_for_api(record)),
+        )
 
-    # TODO: Integrate an approved backend enrichment pipeline (queue + worker).
-    # The mentor management flow must continue to work with enrichment disabled.
-    updated = MENTOR_STORE.update(
+    LOG.info(
+        "linkedin_enrichment_attempt mentor_id=%s actor=%s provider=%s",
         mentor_id,
-        {"enrichment_status": "queued"},
-        actor=session.username,
+        session.username,
+        LINKEDIN_ENRICHMENT.provider_name,
+    )
+    result = LINKEDIN_ENRICHMENT.enrich_for_mentor(mentor_id, linkedin_url)
+    updates = {
+        key: value
+        for key, value in result.updates.items()
+        if str(value).strip()
+        and key
+        in {
+            "profile_photo_url",
+            "current_company",
+            "current_job_title",
+            "current_location",
+            "current_city",
+            "current_state",
+        }
+    }
+
+    if result.status in {"success", "partial"} and updates:
+        updates["last_enriched_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        updates["enrichment_status"] = result.status
+        updates["enrichment_provider_metadata"] = result.provider_metadata
+        updated = MENTOR_STORE.update(mentor_id, updates, actor=session.username)
+        LOG.info(
+            "linkedin_enrichment_success mentor_id=%s actor=%s status=%s updated_fields=%s",
+            mentor_id,
+            session.username,
+            result.status,
+            sorted(updates.keys()),
+        )
+        return MentorEnrichmentResponse(
+            mentor_id=mentor_id,
+            enrichment_status=result.status,
+            message=result.message,
+            updated_fields=sorted(updates.keys()),
+            mentor=MentorRecord(**_mentor_record_for_api(updated)),
+        )
+
+    LOG.warning(
+        "linkedin_enrichment_failed mentor_id=%s actor=%s status=%s message=%s",
+        mentor_id,
+        session.username,
+        result.status,
+        result.message,
     )
     return MentorEnrichmentResponse(
         mentor_id=mentor_id,
-        enrichment_status=str(updated.get("enrichment_status", "queued")),
-        message="LinkedIn enrichment queued (stub). Worker integration is not implemented yet.",
+        enrichment_status=result.status,
+        message=result.message,
+        updated_fields=[],
+        mentor=MentorRecord(**_mentor_record_for_api(record)),
     )
 
 
@@ -900,7 +1142,14 @@ async def run_match(
 
         _as_csv(mentee_file.filename or "mentees.csv", await mentee_file.read(), mentee_csv)
         _as_csv(mentor_file.filename or "mentors.csv", await mentor_file.read(), mentor_csv)
-        state_path.write_text(json.dumps(_state_dict(payload), indent=2), encoding="utf-8")
+        mentor_capacities = _extract_mentor_capacity_map(mentor_csv)
+        state_payload = _state_dict(payload)
+        state_path.write_text(json.dumps(state_payload, indent=2), encoding="utf-8")
+        try:
+            MATCHING_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            MATCHING_STATE_PATH.write_text(json.dumps(state_payload, indent=2), encoding="utf-8")
+        except Exception as exc:
+            LOG.warning("state_mirror_write_failed path=%s error=%s", MATCHING_STATE_PATH, exc)
 
         cmd = [
             sys.executable,
@@ -934,6 +1183,8 @@ async def run_match(
             raise HTTPException(status_code=500, detail="Pipeline completed but latest_matches.json was not found")
 
         result = json.loads(output_json_path.read_text(encoding="utf-8"))
+        if isinstance(result, dict):
+            _attach_mentor_capacity_metadata(result, mentor_capacities)
         return {
             "status": "ok",
             "result": result,
@@ -1060,10 +1311,22 @@ def run_dev_file_update(
             result["file"] = _read_text_file(output_path)
             result["file_key"] = request.file_key
             result["label"] = str(entry["label"])
-            result["backup_path"] = str(backup_path) if backup_path else None
+            result["backup_path"] = (
+                _normalize_repo_path_for_api(str(backup_path), fallback="")
+                if backup_path
+                else None
+            )
             return result
 
     raise HTTPException(status_code=404, detail=f"No update script found for {request.file_key}")
+
+
+@app.get("/dev/matching-state")
+def get_dev_matching_state(
+    _session: AuthSession = Depends(_require_auth(require_dev=True)),
+) -> Dict[str, Any]:
+    _audit_dev_action("get_dev_matching_state", _session)
+    return _load_matching_state_for_api(MATCHING_STATE_PATH)
 
 
 @app.get("/get_majors")

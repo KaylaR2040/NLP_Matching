@@ -555,6 +555,7 @@ MENTOR_FIELDS = {
     "last_modified_by",
     "last_enriched_at",
     "enrichment_status",
+    "enrichment_provider_metadata",
     "extra_fields",
 }
 
@@ -579,7 +580,7 @@ def _normalize_field(field: str, value: Any) -> Any:
             return True
         return text in {"1", "true", "yes", "y", "active"}
 
-    if field in {"extra_fields"}:
+    if field in {"extra_fields", "enrichment_provider_metadata"}:
         return value if isinstance(value, dict) else {}
 
     if value is None:

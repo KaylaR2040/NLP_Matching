@@ -170,3 +170,5 @@ class MentorEnrichmentResponse(BaseModel):
     mentor_id: str
     enrichment_status: str
     message: str
+    updated_fields: List[str] = Field(default_factory=list)
+    mentor: Optional[MentorRecord] = None
