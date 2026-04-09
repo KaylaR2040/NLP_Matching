@@ -30,6 +30,7 @@ This service is the bridge between Flutter Web and the existing Python matcher a
   - Files: `mentee_file`, `mentor_file` (`.csv`, `.xlsx`, `.xls`)
   - Form field: `payload_json` (JSON string)
   - Runs `nlp_project/main.py ... run` and returns the parsed `latest_matches.json`.
+  - Response includes mentor capacity metadata (`mentor_capacity`, `mentor_capacity` per row) so UI can show mentee limits.
 
 - `GET /mentors`
   - Requires bearer token.
@@ -62,14 +63,23 @@ This service is the bridge between Flutter Web and the existing Python matcher a
   - Requires bearer token.
   - Exports mentor data in a `mentor_real.csv`-compatible structure.
 
+- `GET /mentors/export-xlsx`
+  - Requires bearer token.
+  - Exports mentor data as `.xlsx` using the same mentor export schema.
+
 - `POST /mentors/sync-to-default-csv`
   - Requires dev role bearer token.
   - Writes current mentor export back to canonical backend CSV path.
 
 - `POST /mentors/{mentor_id}/enrich-linkedin`
   - Requires dev role bearer token.
-  - Stub endpoint only; queues enrichment status and returns TODO message.
-  - No live LinkedIn scraping is implemented in the frontend or backend.
+  - Uses backend-only enrichment provider abstraction (mock/proxycurl/http).
+  - Updates mentor fields when data is returned (partial updates allowed).
+  - No LinkedIn scraping is implemented in Flutter frontend.
+
+- `GET /dev/matching-state`
+  - Requires dev role bearer token.
+  - Returns canonical matching state file summary (rejected pairs, locked pairs, excluded IDs).
 
 - `POST /update_orgs`
   - Requires dev role bearer token.
@@ -182,3 +192,11 @@ uvicorn app.main:app --reload --port 8000
   - `WRAPPER_MENTOR_STORE_PATH`
   - `WRAPPER_MENTOR_BACKUP_DIR`
   - `WRAPPER_MENTOR_SOURCE_CSV_PATH`
+  - `WRAPPER_MATCHING_STATE_PATH`
+- LinkedIn enrichment env vars:
+  - `WRAPPER_LINKEDIN_ENRICHMENT_ENABLED`
+  - `WRAPPER_LINKEDIN_ENRICHMENT_PROVIDER` (`disabled`, `mock`, `proxycurl`, `http`)
+  - `WRAPPER_LINKEDIN_ENRICH_MIN_INTERVAL_SECONDS`
+  - `WRAPPER_LINKEDIN_ENRICHMENT_TIMEOUT_SECONDS`
+  - `WRAPPER_LINKEDIN_PROXYCURL_API_KEY` (if using proxycurl)
+  - `WRAPPER_LINKEDIN_PROVIDER_BASE_URL` + `WRAPPER_LINKEDIN_PROVIDER_API_KEY` (if using generic http provider)

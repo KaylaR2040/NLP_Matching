@@ -30,12 +30,13 @@ No matching logic is duplicated in `wrapper/backend`; it is only an orchestratio
 - Backend mentor APIs (auth required, writes dev-only):
   - `GET /mentors`, `GET /mentors/{mentor_id}`
   - `POST /mentors`, `PUT /mentors/{mentor_id}`, `DELETE /mentors/{mentor_id}`
-  - `POST /mentors/import-csv`, `GET /mentors/export-csv`
+  - `POST /mentors/import-csv`, `GET /mentors/export-csv`, `GET /mentors/export-xlsx`
   - `POST /mentors/sync-to-default-csv`
-  - `POST /mentors/{mentor_id}/enrich-linkedin` (stub)
+  - `POST /mentors/{mentor_id}/enrich-linkedin` (provider-based backend enrichment)
 - Frontend pages:
   - regular users: Mentors Directory
   - dev users: Mentor Manager (edit/import/export/sync)
+  - dev users: Dev Dashboard exclusion/lock state visibility
 
 ## Deployment note
 

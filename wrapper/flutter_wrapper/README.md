@@ -21,21 +21,24 @@ This is the UI shell for operations around `nlp_project/main.py`.
   - Lock toggle for keeping pairs fixed across reruns
   - Unmatched pool with drag support
   - Export final board to XLSX
+  - Mentor cards display current load vs configured capacity (`assigned/max`)
 - Mentors directory:
   - Regular dashboard page
   - Backend-driven mentor browsing with search and filters
   - Card view with photo/avatar fallback and LinkedIn link button
 - Mentor manager (dev-only):
   - Add/edit/deactivate mentors with backend persistence
-  - CSV import/export for `mentor_real.csv` workflow compatibility
+  - CSV import + XLSX export for `mentor_real.csv` workflow compatibility
   - Sync current mentor data back to canonical backend CSV path
-  - Enrichment trigger endpoint integration (stub; no scraping in Flutter)
+  - Per-row + in-editor "Update from LinkedIn" actions via backend endpoint
+  - Displays last LinkedIn sync timestamp and profile photo fallback
   - Unsaved-change prompts trigger only on real value changes (not focus)
 - Dev dashboard scaffold:
   - Trigger pull actions for orgs and concentrations
   - Edit and save `data/ncsu_orgs.txt`
   - Edit and save `data/concentrations.txt`
   - Edit and save `wrapper/backend/data/majors.txt`
+  - View current exclusion/lock state from backend matching state file
 
 ## Connect to backend
 
