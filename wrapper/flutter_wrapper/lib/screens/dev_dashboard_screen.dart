@@ -10,6 +10,7 @@ class _DevFileMeta {
   final String path;
   final int lineCount;
   final bool hasUpdateScript;
+  final String durableSource;
 
   const _DevFileMeta({
     required this.fileKey,
@@ -17,6 +18,7 @@ class _DevFileMeta {
     required this.path,
     required this.lineCount,
     required this.hasUpdateScript,
+    required this.durableSource,
   });
 
   factory _DevFileMeta.fromJson(Map<String, dynamic> json) {
@@ -26,6 +28,7 @@ class _DevFileMeta {
       path: (json['path'] ?? '').toString(),
       lineCount: int.tryParse('${json['line_count'] ?? 0}') ?? 0,
       hasUpdateScript: json['has_update_script'] == true,
+      durableSource: (json['durable_source'] ?? 'local_filesystem').toString(),
     );
   }
 }
@@ -111,6 +114,57 @@ class _DevDashboardScreenState extends State<DevDashboardScreen> {
     }
   }
 
+  String _describeLoadSource(Map<String, dynamic> response) {
+    final contentSource = (response['content_source'] ?? '').toString();
+    final durableSource = (response['durable_source'] ?? '').toString();
+    if (contentSource == 'github') {
+      return 'Loaded from GitHub.';
+    }
+    if (contentSource == 'runtime_override' && durableSource == 'github') {
+      return 'Loaded runtime copy backed by GitHub.';
+    }
+    if (contentSource == 'runtime_override') {
+      return 'Loaded runtime override copy.';
+    }
+    if (durableSource == 'github') {
+      return 'Loaded bundled copy. Durable source is GitHub.';
+    }
+    return 'Loaded bundled file.';
+  }
+
+  String _describeSaveResult(Map<String, dynamic> response, String label) {
+    final githubSync =
+        (response['github_sync'] as Map<String, dynamic>? ?? const {});
+    final syncStatus = (githubSync['status'] ?? '').toString();
+    final commitSha = (githubSync['commit_sha'] ?? '').toString();
+    final runtimeOverride = response['runtime_override'] == true;
+    if (syncStatus == 'ok') {
+      final shortSha = commitSha.isNotEmpty && commitSha.length >= 7
+          ? commitSha.substring(0, 7)
+          : commitSha;
+      return shortSha.isNotEmpty
+          ? 'Saved $label. GitHub commit: $shortSha.'
+          : 'Saved $label to GitHub.';
+    }
+    if (runtimeOverride) {
+      return 'Saved $label to runtime storage only.';
+    }
+    return 'Saved $label.';
+  }
+
+  String _durableSourceLabel(String durableSource) {
+    switch (durableSource) {
+      case 'github':
+        return 'Durable source: GitHub';
+      case 'local_filesystem':
+        return 'Durable source: local filesystem';
+      case 'none':
+        return 'Durable source: not configured';
+      default:
+        return 'Durable source: $durableSource';
+    }
+  }
+
   Future<void> _loadFileList({String? preferredKey}) async {
     await _withBusy('Loading editable file list...', () async {
       final response = await widget.apiClient.listDevFiles();
@@ -169,6 +223,8 @@ class _DevDashboardScreenState extends State<DevDashboardScreen> {
         path: item.path,
         lineCount: updatedCount,
         hasUpdateScript: item.hasUpdateScript,
+        durableSource:
+            (response['durable_source'] ?? item.durableSource).toString(),
       );
     }).toList();
 
@@ -179,7 +235,8 @@ class _DevDashboardScreenState extends State<DevDashboardScreen> {
       _editorController.text = text;
       _syncingText = false;
       _dirty = false;
-      _status = 'Loaded ${_selectedFileMeta!.label}.';
+      _status =
+          'Loaded ${_selectedFileMeta!.label}. ${_describeLoadSource(response)}';
     });
   }
 
@@ -210,14 +267,16 @@ class _DevDashboardScreenState extends State<DevDashboardScreen> {
             path: item.path,
             lineCount: updatedCount,
             hasUpdateScript: item.hasUpdateScript,
+            durableSource:
+                (response['durable_source'] ?? item.durableSource).toString(),
           );
         }).toList();
         _selectedFileMeta =
             _files.firstWhere((item) => item.fileKey == fileKey);
         _dirty = false;
         _status = backupPath.isEmpty
-            ? 'Saved ${_selectedFileMeta!.label}.'
-            : 'Saved ${_selectedFileMeta!.label}. Backup: $backupPath';
+            ? _describeSaveResult(response, _selectedFileMeta!.label)
+            : '${_describeSaveResult(response, _selectedFileMeta!.label)} Backup: $backupPath';
       });
       success = true;
     });
@@ -253,6 +312,8 @@ class _DevDashboardScreenState extends State<DevDashboardScreen> {
             path: item.path,
             lineCount: updatedCount,
             hasUpdateScript: item.hasUpdateScript,
+            durableSource: (filePayload['durable_source'] ?? item.durableSource)
+                .toString(),
           );
         }).toList();
         _selectedFileMeta =
@@ -267,8 +328,8 @@ class _DevDashboardScreenState extends State<DevDashboardScreen> {
               : 'Update script timed out. Kept existing ${file.label}.';
         } else {
           _status = backupPath.isEmpty
-              ? 'Updated ${file.label} from script.'
-              : 'Updated ${file.label}. Backup: $backupPath';
+              ? _describeSaveResult(response, file.label)
+              : '${_describeSaveResult(response, file.label)} Backup: $backupPath';
         }
       });
     });
@@ -298,6 +359,8 @@ class _DevDashboardScreenState extends State<DevDashboardScreen> {
             path: item.path,
             lineCount: updatedCount,
             hasUpdateScript: item.hasUpdateScript,
+            durableSource:
+                (response['durable_source'] ?? item.durableSource).toString(),
           );
         }).toList();
         _selectedFileMeta =
@@ -520,7 +583,7 @@ class _DevDashboardScreenState extends State<DevDashboardScreen> {
               const SizedBox(height: 12),
               if (selected != null)
                 Text(
-                  '${selected.path} • ${selected.lineCount} non-empty lines',
+                  '${selected.path} • ${selected.lineCount} non-empty lines • ${_durableSourceLabel(selected.durableSource)}',
                   style: Theme.of(context)
                       .textTheme
                       .bodySmall

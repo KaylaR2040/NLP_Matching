@@ -14,14 +14,12 @@ import subprocess
 import sys
 import tempfile
 import time
-from urllib.parse import quote
 from dataclasses import dataclass
 from io import BytesIO, StringIO
 from pathlib import Path
 from typing import Any, Deque, Dict, Iterable, List, Optional, Set, Tuple
 
 import pandas as pd
-import requests
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -53,6 +51,7 @@ from .linkedin_enrichment import (
     build_linkedin_enrichment_service_from_env,
     normalize_linkedin_profile_url,
 )
+from .github_sync import GitHubSyncConfig, GitHubSyncService
 from .mentor_store import DEFAULT_MENTOR_BACKUP_DIR, DEFAULT_MENTOR_STORE_PATH, MentorStore
 
 
@@ -181,6 +180,7 @@ GITHUB_SYNC_BRANCH = os.getenv("WRAPPER_GITHUB_SYNC_BRANCH", "main").strip() or 
 GITHUB_SYNC_TIMEOUT_SECONDS = float(
     os.getenv("WRAPPER_GITHUB_SYNC_TIMEOUT_SECONDS", "20")
 )
+IS_VERCEL = os.getenv("VERCEL", "").strip() != ""
 
 BASE_DEV_EDITABLE_FILES: Dict[str, Dict[str, Any]] = {
     "ncsu_orgs": {
@@ -250,6 +250,15 @@ LOG = logging.getLogger("wrapper.auth")
 REQUEST_LOG = logging.getLogger("wrapper.request")
 MENTOR_STORE = MentorStore(store_path=MENTOR_STORE_PATH, backup_dir=MENTOR_BACKUP_DIR)
 LINKEDIN_ENRICHMENT = build_linkedin_enrichment_service_from_env()
+GITHUB_SYNC = GitHubSyncService(
+    GitHubSyncConfig(
+        enabled=GITHUB_SYNC_ENABLED,
+        token=GITHUB_SYNC_TOKEN,
+        repo=GITHUB_SYNC_REPO,
+        branch=GITHUB_SYNC_BRANCH,
+        timeout_seconds=GITHUB_SYNC_TIMEOUT_SECONDS,
+    )
+)
 
 
 app = FastAPI(title="NLP Mentor Matcher Wrapper API", version="1.0.0")
@@ -567,7 +576,7 @@ def _list_dev_file_entries() -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
     for key, entry in _editable_files_map().items():
         path = Path(entry["path"]).resolve()
-        file_info = _read_text_file(path)
+        file_info = _read_text_file(path, entry=entry, prefer_remote=False)
         rows.append(
             {
                 "file_key": key,
@@ -575,10 +584,91 @@ def _list_dev_file_entries() -> List[Dict[str, Any]]:
                 "path": file_info["path"],
                 "line_count": file_info["line_count"],
                 "has_update_script": bool(entry.get("script_kind")),
+                "repo_backed": _is_repo_backed_entry(entry),
+                "durable_source": _durable_source(entry),
             }
         )
     rows.sort(key=lambda item: str(item["label"]).lower())
     return rows
+
+
+def _entry_repo_path(entry: Dict[str, Any]) -> str:
+    repo_path = str(entry.get("repo_path", "")).strip()
+    if repo_path:
+        return repo_path
+    return _repo_relative_path(Path(entry["path"]))
+
+
+def _is_repo_backed_entry(entry: Dict[str, Any]) -> bool:
+    return bool(_entry_repo_path(entry))
+
+
+def _durable_source(entry: Dict[str, Any]) -> str:
+    if _is_repo_backed_entry(entry) and GITHUB_SYNC.enabled:
+        return "github"
+    if _is_repo_backed_entry(entry) and IS_VERCEL:
+        return "none"
+    return "local_filesystem"
+
+
+def _writable_dev_path(path: Path) -> Path:
+    path = path.resolve()
+    if IS_VERCEL:
+        return _runtime_override_path(path)
+    return path
+
+
+def _cache_dev_runtime_override(path: Path, text: str) -> Path:
+    target = _runtime_override_path(path.resolve())
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text.replace("\r\n", "\n"), encoding="utf-8")
+    return target
+
+
+def _read_text_file(
+    path: Path,
+    *,
+    entry: Optional[Dict[str, Any]] = None,
+    prefer_remote: bool = False,
+) -> Dict[str, Any]:
+    path = path.resolve()
+    override = _runtime_override_path(path)
+    content_source = "runtime_override" if override.exists() else "bundled_file"
+    github_sync: Dict[str, Any] = {"status": "not_requested"}
+
+    if entry and prefer_remote and _is_repo_backed_entry(entry) and GITHUB_SYNC.enabled:
+        github_sync = GITHUB_SYNC.fetch_text(_entry_repo_path(entry))
+        if github_sync.get("status") == "ok":
+            _cache_dev_runtime_override(path, str(github_sync.get("text", "")))
+            content_source = "github"
+        elif github_sync.get("status") not in {"disabled", "missing"}:
+            LOG.warning(
+                "dev_file_github_fetch_failed path=%s status=%s message=%s",
+                _entry_repo_path(entry),
+                github_sync.get("status"),
+                github_sync.get("message"),
+            )
+
+    source = override if override.exists() else path
+    if not source.exists():
+        target = _writable_dev_path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("", encoding="utf-8")
+        source = target
+        content_source = "runtime_override" if target == override else "local_file"
+
+    text = source.read_text(encoding="utf-8")
+    line_count = len([line for line in text.splitlines() if line.strip()])
+    return {
+        "path": _normalize_repo_path_for_api(str(path)),
+        "storage_path": _normalize_repo_path_for_api(str(source), fallback=source.name),
+        "runtime_override": source == override,
+        "content_source": content_source,
+        "durable_source": _durable_source(entry or {"path": path, "repo_path": _repo_relative_path(path)}),
+        "github_sync": github_sync,
+        "text": text,
+        "line_count": line_count,
+    }
 
 
 def _backup_current_file(path: Path, file_key: str) -> Optional[Path]:
@@ -605,10 +695,8 @@ def _write_text_file_with_backup(path: Path, text: str, file_key: str) -> Dict[s
 
 
 def _sync_dev_file_to_github(entry: Dict[str, Any], text: str, *, action: str, actor: str) -> Dict[str, Any]:
-    repo_path = str(entry.get("repo_path", "")).strip()
-    if not repo_path:
-        repo_path = _repo_relative_path(Path(entry["path"]))
-    sync_payload = _sync_text_to_github(
+    repo_path = _entry_repo_path(entry)
+    sync_payload = GITHUB_SYNC.update_text(
         repo_path,
         text,
         message=f"{action} via wrapper dev editor by {actor}",
@@ -621,6 +709,14 @@ def _sync_dev_file_to_github(entry: Dict[str, Any], text: str, *, action: str, a
         sync_payload.get("status"),
     )
     return sync_payload
+
+
+def _ensure_github_sync_succeeded(sync_payload: Dict[str, Any], *, action: str) -> None:
+    if sync_payload.get("status") == "ok":
+        return
+    message = str(sync_payload.get("message", "")).strip()
+    detail = message or f"GitHub sync failed during {action}."
+    raise HTTPException(status_code=502, detail=detail)
 
 
 def _latest_backup_path(file_key: str) -> Optional[Path]:
@@ -645,6 +741,22 @@ def _revert_file_from_latest_backup(file_key: str) -> Dict[str, Any]:
     payload = _read_text_file(target)
     payload["reverted_from"] = _normalize_repo_path_for_api(str(latest), fallback="")
     return payload
+
+
+def _require_durable_repo_write(entry: Dict[str, Any]) -> None:
+    if not _is_repo_backed_entry(entry):
+        return
+    if not IS_VERCEL:
+        return
+    if GITHUB_SYNC.enabled:
+        return
+    raise HTTPException(
+        status_code=503,
+        detail=(
+            "GitHub-backed persistence is not configured for this deployment. "
+            "Set WRAPPER_GITHUB_SYNC_TOKEN and WRAPPER_GITHUB_SYNC_REPO before editing repo-backed files."
+        ),
+    )
 
 
 def _validate_payload(raw: Dict[str, Any]) -> RunMatchPayload:
@@ -815,36 +927,10 @@ def _timeout_degraded_result(
     }
 
 
-def _read_text_file(path: Path) -> Dict[str, Any]:
-    path = path.resolve()
-    override = _runtime_override_path(path)
-    source = override if override.exists() else path
-
-    if not source.exists():
-        try:
-            source.parent.mkdir(parents=True, exist_ok=True)
-            source.write_text("", encoding="utf-8")
-        except OSError:
-            override.parent.mkdir(parents=True, exist_ok=True)
-            source = override
-            if not source.exists():
-                source.write_text("", encoding="utf-8")
-
-    text = source.read_text(encoding="utf-8")
-    line_count = len([line for line in text.splitlines() if line.strip()])
-    return {
-        "path": _normalize_repo_path_for_api(str(path)),
-        "storage_path": _normalize_repo_path_for_api(str(source), fallback=source.name),
-        "runtime_override": source == override,
-        "text": text,
-        "line_count": line_count,
-    }
-
-
 def _write_text_file(path: Path, text: str) -> Dict[str, Any]:
     path = path.resolve()
     normalized = text.replace("\r\n", "\n")
-    target = path
+    target = _writable_dev_path(path)
     runtime_override = False
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -861,6 +947,8 @@ def _write_text_file(path: Path, text: str) -> Dict[str, Any]:
             override,
             exc,
         )
+    if target == _runtime_override_path(path):
+        runtime_override = True
     line_count = len([line for line in normalized.splitlines() if line.strip()])
     return {
         "status": "ok",
@@ -869,81 +957,6 @@ def _write_text_file(path: Path, text: str) -> Dict[str, Any]:
         "runtime_override": runtime_override,
         "line_count": line_count,
     }
-
-
-def _sync_text_to_github(repo_path: str, text: str, *, message: str) -> Dict[str, Any]:
-    result: Dict[str, Any] = {
-        "enabled": GITHUB_SYNC_ENABLED,
-        "repo": GITHUB_SYNC_REPO,
-        "branch": GITHUB_SYNC_BRANCH,
-        "path": repo_path,
-    }
-    if not GITHUB_SYNC_ENABLED:
-        result["status"] = "disabled"
-        return result
-    if not GITHUB_SYNC_TOKEN or not GITHUB_SYNC_REPO:
-        result["status"] = "misconfigured"
-        result["message"] = (
-            "GitHub sync enabled, but WRAPPER_GITHUB_SYNC_TOKEN or WRAPPER_GITHUB_SYNC_REPO is missing."
-        )
-        return result
-
-    url = f"https://api.github.com/repos/{GITHUB_SYNC_REPO}/contents/{quote(repo_path, safe='/')}"
-    headers = {
-        "Accept": "application/vnd.github+json",
-        "Authorization": f"Bearer {GITHUB_SYNC_TOKEN}",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
-    sha: Optional[str] = None
-
-    try:
-        current = requests.get(
-            url,
-            params={"ref": GITHUB_SYNC_BRANCH},
-            headers=headers,
-            timeout=GITHUB_SYNC_TIMEOUT_SECONDS,
-        )
-        if current.status_code == 200:
-            payload = current.json()
-            sha = str(payload.get("sha", "")).strip() or None
-        elif current.status_code != 404:
-            result["status"] = "failed"
-            result["message"] = (
-                f"Could not read file from GitHub ({current.status_code}): {current.text[:300]}"
-            )
-            return result
-
-        content_b64 = base64.b64encode(text.encode("utf-8")).decode("ascii")
-        body: Dict[str, Any] = {
-            "message": message,
-            "content": content_b64,
-            "branch": GITHUB_SYNC_BRANCH,
-        }
-        if sha:
-            body["sha"] = sha
-
-        update = requests.put(
-            url,
-            headers=headers,
-            json=body,
-            timeout=GITHUB_SYNC_TIMEOUT_SECONDS,
-        )
-        if update.status_code not in {200, 201}:
-            result["status"] = "failed"
-            result["message"] = (
-                f"GitHub update failed ({update.status_code}): {update.text[:300]}"
-            )
-            return result
-
-        payload = update.json()
-        commit = payload.get("commit", {}) if isinstance(payload, dict) else {}
-        result["status"] = "ok"
-        result["commit_sha"] = str(commit.get("sha", "")).strip()
-        return result
-    except Exception as exc:
-        result["status"] = "failed"
-        result["message"] = str(exc)
-        return result
 
 
 def _model_dict(instance: Any, *, exclude_unset: bool = False) -> Dict[str, Any]:
@@ -2022,10 +2035,11 @@ def list_dev_files(_session: AuthSession = Depends(_require_auth(require_dev=Tru
 def get_dev_file(file_key: str, _session: AuthSession = Depends(_require_auth(require_dev=True))) -> Dict[str, Any]:
     _audit_dev_action(f"get_dev_file:{file_key}", _session)
     entry = _dev_file_entry(file_key)
-    file_info = _read_text_file(_dev_file_path(file_key))
+    file_info = _read_text_file(_dev_file_path(file_key), entry=entry, prefer_remote=True)
     file_info["file_key"] = file_key
     file_info["label"] = str(entry["label"])
     file_info["has_update_script"] = bool(entry.get("script_kind"))
+    file_info["repo_backed"] = _is_repo_backed_entry(entry)
     return file_info
 
 
@@ -2036,19 +2050,25 @@ def save_dev_file(
 ) -> Dict[str, Any]:
     _audit_dev_action(f"save_dev_file:{request.file_key}", _session)
     entry = _dev_file_entry(request.file_key)
+    _require_durable_repo_write(entry)
+    github_sync = {"status": "disabled"}
+    if _is_repo_backed_entry(entry) and GITHUB_SYNC.enabled:
+        github_sync = _sync_dev_file_to_github(
+            entry,
+            request.text,
+            action="save_dev_file",
+            actor=_session.username,
+        )
+        _ensure_github_sync_succeeded(github_sync, action="save_dev_file")
     payload = _write_text_file_with_backup(
         _dev_file_path(request.file_key),
         request.text,
         request.file_key,
     )
-    payload["github_sync"] = _sync_dev_file_to_github(
-        entry,
-        request.text,
-        action="save_dev_file",
-        actor=_session.username,
-    )
+    payload["github_sync"] = github_sync
     payload["file_key"] = request.file_key
     payload["label"] = str(entry["label"])
+    payload["repo_backed"] = _is_repo_backed_entry(entry)
     return payload
 
 
@@ -2059,15 +2079,21 @@ def revert_dev_file(
 ) -> Dict[str, Any]:
     _audit_dev_action(f"revert_dev_file:{request.file_key}", _session)
     entry = _dev_file_entry(request.file_key)
+    _require_durable_repo_write(entry)
     payload = _revert_file_from_latest_backup(request.file_key)
-    payload["github_sync"] = _sync_dev_file_to_github(
-        entry,
-        str(payload.get("text", "")),
-        action="revert_dev_file",
-        actor=_session.username,
-    )
+    github_sync = {"status": "disabled"}
+    if _is_repo_backed_entry(entry) and GITHUB_SYNC.enabled:
+        github_sync = _sync_dev_file_to_github(
+            entry,
+            str(payload.get("text", "")),
+            action="revert_dev_file",
+            actor=_session.username,
+        )
+        _ensure_github_sync_succeeded(github_sync, action="revert_dev_file")
+    payload["github_sync"] = github_sync
     payload["file_key"] = request.file_key
     payload["label"] = str(entry["label"])
+    payload["repo_backed"] = _is_repo_backed_entry(entry)
     return payload
 
 
@@ -2078,11 +2104,12 @@ def run_dev_file_update(
 ) -> Dict[str, Any]:
     _audit_dev_action(f"run_dev_file_update:{request.file_key}", _session)
     entry = _dev_file_entry(request.file_key)
+    _require_durable_repo_write(entry)
     script_kind = entry.get("script_kind")
     if not script_kind:
         raise HTTPException(status_code=400, detail="No update script configured for this file")
 
-    output_path = _dev_file_path(request.file_key)
+    output_path = _writable_dev_path(_dev_file_path(request.file_key))
     backup_path = _backup_current_file(output_path, request.file_key)
     for candidate in _script_candidates(str(script_kind)):
         if candidate.exists():
@@ -2094,7 +2121,7 @@ def run_dev_file_update(
                     result = _timeout_degraded_result(script_path=candidate, detail=detail)
                 else:
                     raise
-            result["file"] = _read_text_file(output_path)
+            result["file"] = _read_text_file(_dev_file_path(request.file_key), entry=entry, prefer_remote=False)
             result["file_key"] = request.file_key
             result["label"] = str(entry["label"])
             result["backup_path"] = (
@@ -2102,12 +2129,17 @@ def run_dev_file_update(
                 if backup_path
                 else None
             )
-            result["github_sync"] = _sync_dev_file_to_github(
-                entry,
-                str(result.get("file", {}).get("text", "")),
-                action="run_dev_file_update",
-                actor=_session.username,
-            )
+            github_sync = {"status": "disabled"}
+            if _is_repo_backed_entry(entry) and GITHUB_SYNC.enabled:
+                github_sync = _sync_dev_file_to_github(
+                    entry,
+                    str(result.get("file", {}).get("text", "")),
+                    action="run_dev_file_update",
+                    actor=_session.username,
+                )
+                _ensure_github_sync_succeeded(github_sync, action="run_dev_file_update")
+            result["github_sync"] = github_sync
+            result["repo_backed"] = _is_repo_backed_entry(entry)
             return result
 
     raise HTTPException(status_code=404, detail=f"No update script found for {request.file_key}")

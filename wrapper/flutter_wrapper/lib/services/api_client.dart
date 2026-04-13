@@ -23,6 +23,10 @@ class ApiUnauthorizedException extends ApiClientException {
   const ApiUnauthorizedException(super.message);
 }
 
+class ApiSessionExpiredException extends ApiClientException {
+  const ApiSessionExpiredException(super.message);
+}
+
 class ApiClient {
   final String baseUrl;
   String? _authToken;
@@ -97,22 +101,58 @@ class ApiClient {
     return '${value.substring(0, maxLength)}...(truncated)';
   }
 
-  void _throwIfError(http.Response response, String operation, {Uri? uri}) {
+  String _errorMessageFromBodyText(String bodyText) {
+    final trimmed = bodyText.trim();
+    if (trimmed.isEmpty) {
+      return 'No response body';
+    }
+    try {
+      final parsed = jsonDecode(trimmed);
+      if (parsed is Map<String, dynamic>) {
+        final detail = parsed['detail'];
+        if (detail is String && detail.trim().isNotEmpty) {
+          return detail.trim();
+        }
+        if (detail is Map<String, dynamic>) {
+          final message = (detail['message'] ?? '').toString().trim();
+          if (message.isNotEmpty) {
+            return message;
+          }
+        }
+        final message = (parsed['message'] ?? '').toString().trim();
+        if (message.isNotEmpty) {
+          return message;
+        }
+      }
+    } catch (_) {
+      // Fall back to raw text for non-JSON error bodies.
+    }
+    return trimmed;
+  }
+
+  void _throwIfError(
+    http.Response response,
+    String operation, {
+    Uri? uri,
+    bool expireSessionOnAuthFailure = false,
+  }) {
     if (response.statusCode < 400) {
       return;
     }
     final body =
         response.body.trim().isEmpty ? 'No response body' : response.body;
+    final errorMessage = _errorMessageFromBodyText(body);
     _log(
       'api_response_error operation=$operation method=HTTP status=${response.statusCode} '
       'url=${uri ?? "unknown"} body=${_truncate(body)}',
     );
-    if (response.statusCode == 401 || response.statusCode == 403) {
-      throw ApiUnauthorizedException(
-          '$operation failed (${response.statusCode}): $body');
+    if ((response.statusCode == 401 || response.statusCode == 403) &&
+        expireSessionOnAuthFailure) {
+      throw ApiSessionExpiredException(
+          '$operation failed (${response.statusCode}): $errorMessage');
     }
     throw ApiClientException(
-        '$operation failed (${response.statusCode}): $body');
+        '$operation failed (${response.statusCode}): $errorMessage');
   }
 
   void _throwMultipartIfError(
@@ -120,16 +160,19 @@ class ApiClient {
     String operation,
     String bodyText, {
     required Uri uri,
+    bool expireSessionOnAuthFailure = false,
   }) {
     _log(
       'api_response_error operation=$operation method=MULTIPART status=$statusCode '
       'url=$uri body=${_truncate(bodyText)}',
     );
-    if (statusCode == 401 || statusCode == 403) {
-      throw ApiUnauthorizedException(
-          '$operation failed ($statusCode): $bodyText');
+    final errorMessage = _errorMessageFromBodyText(bodyText);
+    if ((statusCode == 401 || statusCode == 403) &&
+        expireSessionOnAuthFailure) {
+      throw ApiSessionExpiredException(
+          '$operation failed ($statusCode): $errorMessage');
     }
-    throw ApiClientException('$operation failed ($statusCode): $bodyText');
+    throw ApiClientException('$operation failed ($statusCode): $errorMessage');
   }
 
   Future<http.Response> _request({
@@ -137,6 +180,7 @@ class ApiClient {
     required Uri uri,
     required String operation,
     bool requireAuth = true,
+    bool expireSessionOnAuthFailure = false,
     Object? body,
     Map<String, String>? headers,
   }) async {
@@ -160,7 +204,12 @@ class ApiClient {
         default:
           throw ApiClientException('Unsupported method: $method');
       }
-      _throwIfError(response, operation, uri: uri);
+      _throwIfError(
+        response,
+        operation,
+        uri: uri,
+        expireSessionOnAuthFailure: expireSessionOnAuthFailure,
+      );
       return response;
     } on ApiClientException {
       rethrow;
@@ -175,6 +224,7 @@ class ApiClient {
   Future<Map<String, dynamic>> _sendMultipartJson({
     required String operation,
     required http.MultipartRequest request,
+    bool expireSessionOnAuthFailure = false,
   }) async {
     _log('api_request method=MULTIPART url=${request.url}');
     try {
@@ -186,6 +236,7 @@ class ApiClient {
           operation,
           bodyText,
           uri: request.url,
+          expireSessionOnAuthFailure: expireSessionOnAuthFailure,
         );
       }
       if (bodyText.trim().isEmpty) {
@@ -247,6 +298,7 @@ class ApiClient {
       method: 'GET',
       uri: uri,
       operation: 'get me',
+      expireSessionOnAuthFailure: true,
     );
     return _decodeBody(response);
   }
@@ -258,6 +310,7 @@ class ApiClient {
       uri: uri,
       operation: 'refresh token',
       body: '{}',
+      expireSessionOnAuthFailure: true,
     );
     final body = _decodeBody(response);
     final token = (body['token'] ?? '').toString();

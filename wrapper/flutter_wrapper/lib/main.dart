@@ -38,12 +38,14 @@ class _WrapperAppState extends State<WrapperApp> {
   Future<void> _restoreSession() async {
     final token = await _secureStorage.read(key: _tokenStorageKey);
     if (token == null || token.isEmpty) {
+      debugPrint('auth_state transition=no_stored_session');
       if (mounted) {
         setState(() => _bootstrapping = false);
       }
       return;
     }
 
+    debugPrint('auth_state transition=restore_session token_present=true');
     _apiClient.setAuthToken(token);
 
     try {
@@ -71,7 +73,9 @@ class _WrapperAppState extends State<WrapperApp> {
           _bootstrapping = false;
         });
       }
-    } on ApiUnauthorizedException {
+      debugPrint('auth_state transition=restore_session_success is_dev=$isDev');
+    } on ApiSessionExpiredException {
+      debugPrint('auth_state transition=session_expired_redirect_login');
       _apiClient.clearAuthToken();
       await _secureStorage.delete(key: _tokenStorageKey);
       await _secureStorage.delete(key: _isDevStorageKey);
@@ -108,9 +112,11 @@ class _WrapperAppState extends State<WrapperApp> {
     if (mounted) {
       setState(() => _isDev = isDev);
     }
+    debugPrint('auth_state transition=login_success is_dev=$isDev');
   }
 
   Future<void> _handleLogout() async {
+    debugPrint('auth_state transition=logout_requested');
     try {
       await _apiClient.logout();
     } catch (_) {
@@ -122,6 +128,7 @@ class _WrapperAppState extends State<WrapperApp> {
     if (mounted) {
       setState(() => _isDev = null);
     }
+    debugPrint('auth_state transition=logout_complete');
   }
 
   @override
