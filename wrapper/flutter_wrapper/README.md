@@ -83,6 +83,25 @@ flutter build web \
   --dart-define=WRAPPER_API_BASE_URL=https://<your-backend-domain>
 ```
 
+## Deploy frontend to Vercel
+
+Use a separate Vercel project for frontend.
+
+- Root Directory: `wrapper/flutter_wrapper`
+- Build Command: `bash scripts/vercel_build.sh`
+- Output Directory: `build/web`
+- Install Command: leave empty/default
+
+Set this environment variable in Vercel:
+
+- `WRAPPER_API_BASE_URL=https://nlpmatchbackend.vercel.app`
+
+Notes:
+
+- Login uses backend `POST /login`, so backend auth env vars must already be configured.
+- No API keys should be hardcoded in Dart source; use Vercel Environment Variables.
+- Markdown/source files are not publicly served from this deployment because Vercel only serves the built `build/web` output.
+
 ## Notes
 
 - This wrapper targets web behavior first (`dart:html` download flow).
