@@ -26,8 +26,28 @@ class _WrapperAppState extends State<WrapperApp> {
   bool _bootstrapping = true;
   bool? _isDev;
 
-  // Update this URL if backend is hosted elsewhere.
-  final ApiClient _apiClient = ApiClient(baseUrl: 'http://localhost:8000');
+  String _resolveApiBaseUrl() {
+    const configured =
+        String.fromEnvironment('WRAPPER_API_BASE_URL', defaultValue: '');
+    final trimmedConfigured = configured.trim();
+    if (trimmedConfigured.isNotEmpty) {
+      return trimmedConfigured.endsWith('/')
+          ? trimmedConfigured.substring(0, trimmedConfigured.length - 1)
+          : trimmedConfigured;
+    }
+
+    final base = Uri.base;
+    final host = base.host.toLowerCase();
+    final isLocalHost = host == 'localhost' || host == '127.0.0.1';
+    if (isLocalHost) {
+      return 'http://localhost:8000';
+    }
+
+    final portPart = base.hasPort ? ':${base.port}' : '';
+    return '${base.scheme}://${base.host}$portPart';
+  }
+
+  late final ApiClient _apiClient = ApiClient(baseUrl: _resolveApiBaseUrl());
 
   @override
   void initState() {

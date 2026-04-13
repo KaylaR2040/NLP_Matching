@@ -42,11 +42,12 @@ This is the UI shell for operations around `nlp_project/main.py`.
 
 ## Connect to backend
 
-By default, `lib/main.dart` uses:
+Backend URL resolution:
 
-- `http://localhost:8000`
-
-Update `ApiClient(baseUrl: ...)` if needed.
+- If `--dart-define=WRAPPER_API_BASE_URL=...` is provided, that URL is used.
+- Otherwise:
+  - localhost frontend => `http://localhost:8000`
+  - non-local frontend => same-origin base URL
 
 Credentials are never stored in Dart source. Configure users on backend via `wrapper/backend/.env`.
 
@@ -56,6 +57,30 @@ Credentials are never stored in Dart source. Configure users on backend via `wra
 cd wrapper/flutter_wrapper
 flutter pub get
 flutter run -d chrome
+```
+
+Run Flutter web against deployed backend:
+
+```bash
+cd wrapper/flutter_wrapper
+flutter run -d chrome \
+  --dart-define=WRAPPER_API_BASE_URL=https://<your-backend-domain>
+```
+
+If Flutter says web is not configured, scaffold web support once:
+
+```bash
+cd wrapper/flutter_wrapper
+flutter create . --platforms=web
+```
+
+Build production web bundle:
+
+```bash
+cd wrapper/flutter_wrapper
+flutter build web \
+  --release \
+  --dart-define=WRAPPER_API_BASE_URL=https://<your-backend-domain>
 ```
 
 ## Notes
