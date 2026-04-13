@@ -860,131 +860,123 @@ class _MentorManagerScreenState extends State<MentorManagerScreen> {
             ),
             const SizedBox(width: 10),
             Expanded(
-              child: InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: (_loading || _bulkLinkedInUpdating)
-                    ? null
-                    : () => _openEditor(mentor: mentor),
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              mentor.fullName.trim().isNotEmpty
-                                  ? mentor.fullName
-                                  : mentor.email,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleMedium
-                                  ?.copyWith(fontWeight: FontWeight.w700),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            mentor.fullName.trim().isNotEmpty
+                                ? mentor.fullName
+                                : mentor.email,
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          const SizedBox(width: 8),
-                          _activityBadge(mentor.isActive),
-                        ],
-                      ),
-                      Text(
-                        mentor.email,
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(color: Colors.black54),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 6),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 6,
-                        children: [
-                          _detailChip(
-                            icon: Icons.business_outlined,
-                            label: mentor.currentCompany.trim().isNotEmpty
-                                ? mentor.currentCompany.trim()
-                                : 'Company not set',
-                          ),
-                          _detailChip(
-                            icon: Icons.work_outline,
-                            label: mentor.currentJobTitle.trim().isNotEmpty
-                                ? mentor.currentJobTitle.trim()
-                                : 'Title not set',
-                          ),
-                          _detailChip(
-                            icon: Icons.location_on_outlined,
-                            label: location.isNotEmpty
-                                ? location
-                                : 'Location not set',
-                          ),
-                          _detailChip(
-                            icon: Icons.history,
-                            label: mentor.lastEnrichedAt.trim().isNotEmpty
-                                ? 'LinkedIn sync: ${mentor.lastEnrichedAt.trim()}'
-                                : 'LinkedIn sync: never',
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          OutlinedButton.icon(
-                            onPressed: hasLinkedIn
-                                ? () => _openLinkedIn(mentor.linkedInUrl)
+                        ),
+                        const SizedBox(width: 8),
+                        _activityBadge(mentor.isActive),
+                      ],
+                    ),
+                    Text(
+                      mentor.email,
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: Colors.black54),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
+                        _detailChip(
+                          icon: Icons.business_outlined,
+                          label: mentor.currentCompany.trim().isNotEmpty
+                              ? mentor.currentCompany.trim()
+                              : 'Company not set',
+                        ),
+                        _detailChip(
+                          icon: Icons.work_outline,
+                          label: mentor.currentJobTitle.trim().isNotEmpty
+                              ? mentor.currentJobTitle.trim()
+                              : 'Title not set',
+                        ),
+                        _detailChip(
+                          icon: Icons.location_on_outlined,
+                          label: location.isNotEmpty
+                              ? location
+                              : 'Location not set',
+                        ),
+                        _detailChip(
+                          icon: Icons.history,
+                          label: mentor.lastEnrichedAt.trim().isNotEmpty
+                              ? 'LinkedIn sync: ${mentor.lastEnrichedAt.trim()}'
+                              : 'LinkedIn sync: never',
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: hasLinkedIn
+                              ? () => _openLinkedIn(mentor.linkedInUrl)
+                              : null,
+                          icon: const Icon(Icons.open_in_new, size: 16),
+                          label: const Text('Open LinkedIn'),
+                        ),
+                        Tooltip(
+                          message: linkedInDisabledReason.isEmpty
+                              ? (isEnriching
+                                  ? 'Updating from LinkedIn...'
+                                  : 'Update from LinkedIn')
+                              : linkedInDisabledReason,
+                          child: OutlinedButton.icon(
+                            onPressed: canUpdateLinkedIn
+                                ? () => _updateFromLinkedIn(mentor)
                                 : null,
-                            icon: const Icon(Icons.open_in_new, size: 16),
-                            label: const Text('Open LinkedIn'),
+                            icon: isEnriching
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child:
+                                        CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.auto_awesome_outlined,
+                                    size: 16),
+                            label: Text(isEnriching
+                                ? 'Updating...'
+                                : 'Update from LinkedIn'),
                           ),
-                          Tooltip(
-                            message: linkedInDisabledReason.isEmpty
-                                ? (isEnriching
-                                    ? 'Updating from LinkedIn...'
-                                    : 'Update from LinkedIn')
-                                : linkedInDisabledReason,
-                            child: OutlinedButton.icon(
-                              onPressed: canUpdateLinkedIn
-                                  ? () => _updateFromLinkedIn(mentor)
-                                  : null,
-                              icon: isEnriching
-                                  ? const SizedBox(
-                                      width: 14,
-                                      height: 14,
-                                      child: CircularProgressIndicator(
-                                          strokeWidth: 2),
-                                    )
-                                  : const Icon(Icons.auto_awesome_outlined,
-                                      size: 16),
-                              label: Text(isEnriching
-                                  ? 'Updating...'
-                                  : 'Update from LinkedIn'),
-                            ),
-                          ),
-                          TextButton.icon(
-                            onPressed: (_loading || _bulkLinkedInUpdating)
-                                ? null
-                                : () => _openEditor(mentor: mentor),
-                            icon: const Icon(Icons.edit_outlined, size: 16),
-                            label: const Text('Edit'),
-                          ),
-                          TextButton.icon(
-                            onPressed: (_loading || _bulkLinkedInUpdating)
-                                ? null
-                                : () => _deactivateMentor(mentor),
-                            icon:
-                                const Icon(Icons.person_off_outlined, size: 16),
-                            label: const Text('Deactivate'),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+                        ),
+                        TextButton.icon(
+                          onPressed: (_loading || _bulkLinkedInUpdating)
+                              ? null
+                              : () => _openEditor(mentor: mentor),
+                          icon: const Icon(Icons.edit_outlined, size: 16),
+                          label: const Text('Edit'),
+                        ),
+                        TextButton.icon(
+                          onPressed: (_loading || _bulkLinkedInUpdating)
+                              ? null
+                              : () => _deactivateMentor(mentor),
+                          icon: const Icon(Icons.person_off_outlined, size: 16),
+                          label: const Text('Deactivate'),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
             ),
