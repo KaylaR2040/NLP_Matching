@@ -4,6 +4,7 @@ import copy
 import csv
 from io import StringIO
 import json
+import logging
 import os
 import re
 import shutil
@@ -16,6 +17,7 @@ from .linkedin_enrichment import normalize_linkedin_profile_url
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
+LOG = logging.getLogger("wrapper.mentor_store")
 
 
 def _resolve_from_backend(path_value: str) -> Path:
@@ -55,10 +57,45 @@ class MentorStore:
         store_path: Path = DEFAULT_MENTOR_STORE_PATH,
         backup_dir: Path = DEFAULT_MENTOR_BACKUP_DIR,
     ) -> None:
-        self._store_path = Path(store_path)
-        self._backup_dir = Path(backup_dir)
-        self._store_path.parent.mkdir(parents=True, exist_ok=True)
-        self._backup_dir.mkdir(parents=True, exist_ok=True)
+        requested_store_path = Path(store_path)
+        requested_backup_dir = Path(backup_dir)
+        self._store_path = requested_store_path
+        self._backup_dir = requested_backup_dir
+
+        try:
+            self._ensure_storage_dirs(requested_store_path, requested_backup_dir)
+            self._store_path = requested_store_path
+            self._backup_dir = requested_backup_dir
+            return
+        except OSError as exc:
+            runtime_root = Path(
+                os.getenv("WRAPPER_RUNTIME_DATA_DIR", "/tmp/nlp_matching_runtime")
+            ).expanduser()
+            runtime_store = runtime_root / "mentors" / "mentors_store.json"
+            runtime_backup = runtime_root / "mentors" / "backups"
+            self._ensure_storage_dirs(runtime_store, runtime_backup)
+            if requested_store_path.exists() and not runtime_store.exists():
+                try:
+                    runtime_store.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(requested_store_path, runtime_store)
+                except OSError as seed_exc:
+                    LOG.warning(
+                        "mentor_store_seed_failed source=%s target=%s error=%s",
+                        requested_store_path,
+                        runtime_store,
+                        seed_exc,
+                    )
+            self._store_path = runtime_store
+            self._backup_dir = runtime_backup
+            LOG.warning(
+                "mentor_store_runtime_fallback requested_store=%s requested_backup=%s "
+                "runtime_store=%s runtime_backup=%s error=%s",
+                requested_store_path,
+                requested_backup_dir,
+                runtime_store,
+                runtime_backup,
+                exc,
+            )
 
     @property
     def store_path(self) -> Path:
@@ -374,6 +411,11 @@ class MentorStore:
             tmp_file.flush()
             temp_path = Path(tmp_file.name)
         temp_path.replace(self._store_path)
+
+    @staticmethod
+    def _ensure_storage_dirs(store_path: Path, backup_dir: Path) -> None:
+        store_path.parent.mkdir(parents=True, exist_ok=True)
+        backup_dir.mkdir(parents=True, exist_ok=True)
 
     def _create_backup_snapshot(self) -> Optional[Path]:
         if not self._store_path.exists():
