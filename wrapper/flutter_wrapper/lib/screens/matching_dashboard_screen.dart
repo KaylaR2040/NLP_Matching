@@ -49,8 +49,20 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
 
   List<MentorCardState> get _mentorCards {
     final list = _mentorsById.values.toList();
-    list.sort((a, b) =>
-        a.mentorName.toLowerCase().compareTo(b.mentorName.toLowerCase()));
+    list.sort((a, b) {
+      final aHasMatches = a.menteeIds.isNotEmpty;
+      final bHasMatches = b.menteeIds.isNotEmpty;
+      if (aHasMatches != bHasMatches) {
+        return aHasMatches ? -1 : 1;
+      }
+
+      final sizeCompare = b.menteeIds.length.compareTo(a.menteeIds.length);
+      if (sizeCompare != 0) {
+        return sizeCompare;
+      }
+
+      return a.mentorName.toLowerCase().compareTo(b.mentorName.toLowerCase());
+    });
     return list;
   }
 
@@ -489,10 +501,17 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
 
   Widget _buildMentorBoardCard(MentorCardState mentor) {
     final sortedMenteeIds = [...mentor.menteeIds]..sort((a, b) {
-        final left = _menteesById[a]?.name ?? a;
-        final right = _menteesById[b]?.name ?? b;
-        return left.toLowerCase().compareTo(right.toLowerCase());
-      });
+      final aPercent = _matchPercentForPair(a, mentor.mentorId) ?? -1;
+      final bPercent = _matchPercentForPair(b, mentor.mentorId) ?? -1;
+      final percentCompare = bPercent.compareTo(aPercent);
+      if (percentCompare != 0) {
+        return percentCompare;
+      }
+
+      final left = _menteesById[a]?.name ?? a;
+      final right = _menteesById[b]?.name ?? b;
+      return left.toLowerCase().compareTo(right.toLowerCase());
+    });
 
     return DragTarget<String>(
       onWillAcceptWithDetails: (_) => true,
