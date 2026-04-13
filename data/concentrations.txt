@@ -14,5 +14,4 @@ Networking Software Concentration
 Optics and Photonics Concentration
 Power Systems Concentration
 Radio Frequency Circuits Concentration
-REES Concentration
 Renewable Electric Energy Systems Concentration

@@ -47,6 +47,12 @@ class _MentorsDirectoryScreenState extends State<MentorsDirectoryScreen> {
     super.dispose();
   }
 
+  void _goBack() {
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+  }
+
   Future<void> _loadMentors() async {
     setState(() {
       _loading = true;
@@ -155,11 +161,15 @@ class _MentorsDirectoryScreenState extends State<MentorsDirectoryScreen> {
                             ? mentor.fullName.trim()
                             : mentor.email,
                         style: Theme.of(context).textTheme.titleMedium,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 2),
                       Text(
                         title.isNotEmpty ? title : 'Title not provided',
                         style: Theme.of(context).textTheme.bodyMedium,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),
@@ -183,7 +193,14 @@ class _MentorsDirectoryScreenState extends State<MentorsDirectoryScreen> {
               children: [
                 if (mentor.industryFocusArea.trim().isNotEmpty)
                   Chip(
-                    label: Text(mentor.industryFocusArea.trim()),
+                    label: SizedBox(
+                      width: 130,
+                      child: Text(
+                        mentor.industryFocusArea.trim(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                   ),
                 Chip(
                   label: Text(mentor.isActive ? 'Active' : 'Inactive'),
@@ -218,7 +235,13 @@ class _MentorsDirectoryScreenState extends State<MentorsDirectoryScreen> {
       children: [
         Icon(icon, size: 16),
         const SizedBox(width: 6),
-        Expanded(child: Text(text)),
+        Expanded(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
       ],
     );
   }
@@ -227,6 +250,12 @@ class _MentorsDirectoryScreenState extends State<MentorsDirectoryScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false,
+        leading: IconButton(
+          tooltip: 'Back',
+          onPressed: _goBack,
+          icon: const Icon(Icons.arrow_back),
+        ),
         title: const Text('Mentors Directory'),
       ),
       body: Padding(
@@ -350,7 +379,7 @@ class _MentorsDirectoryScreenState extends State<MentorsDirectoryScreen> {
                                 crossAxisCount: crossAxisCount,
                                 crossAxisSpacing: 10,
                                 mainAxisSpacing: 10,
-                                childAspectRatio: 1.45,
+                                mainAxisExtent: crossAxisCount == 1 ? 292 : 272,
                               ),
                               itemBuilder: (context, index) {
                                 return _mentorCard(_items[index]);

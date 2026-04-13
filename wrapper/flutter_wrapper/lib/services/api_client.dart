@@ -128,7 +128,6 @@ class ApiClient {
 
   Future<Map<String, dynamic>> runMatch({
     required SelectedFile menteeFile,
-    required SelectedFile mentorFile,
     required Map<String, dynamic> payload,
   }) async {
     final uri = Uri.parse('$baseUrl/run_match');
@@ -138,11 +137,6 @@ class ApiClient {
         'mentee_file',
         menteeFile.bytes,
         filename: menteeFile.filename,
-      ))
-      ..files.add(http.MultipartFile.fromBytes(
-        'mentor_file',
-        mentorFile.bytes,
-        filename: mentorFile.filename,
       ));
 
     if (_authToken != null && _authToken!.isNotEmpty) {
@@ -318,6 +312,25 @@ class ApiClient {
       body: '{}',
     );
     _throwIfError(response, 'linkedin enrichment');
+    return _decodeBody(response);
+  }
+
+  Future<Map<String, dynamic>> getLinkedInEnrichmentConfig() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/mentors/linkedin-enrichment/config'),
+      headers: _jsonHeaders(requireAuth: true),
+    );
+    _throwIfError(response, 'get linkedin enrichment config');
+    return _decodeBody(response);
+  }
+
+  Future<Map<String, dynamic>> bulkDeleteMentors(List<String> mentorIds) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/mentors/bulk-delete'),
+      headers: _jsonHeaders(requireAuth: true),
+      body: jsonEncode({'mentor_ids': mentorIds}),
+    );
+    _throwIfError(response, 'bulk delete mentors');
     return _decodeBody(response);
   }
 

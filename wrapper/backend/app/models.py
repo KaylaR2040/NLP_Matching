@@ -172,3 +172,21 @@ class MentorEnrichmentResponse(BaseModel):
     message: str
     updated_fields: List[str] = Field(default_factory=list)
     mentor: Optional[MentorRecord] = None
+
+
+class MentorBulkDeleteRequest(BaseModel):
+    mentor_ids: List[str] = Field(default_factory=list)
+
+
+class MentorBulkDeleteResponse(BaseModel):
+    requested: int
+    deleted: int
+    deleted_mentor_ids: List[str] = Field(default_factory=list)
+    not_found_mentor_ids: List[str] = Field(default_factory=list)
+
+
+class LinkedInEnrichmentConfigResponse(BaseModel):
+    enabled: bool
+    provider: str
+    disabled_reason: str = ""
+    min_interval_seconds: int = 0
