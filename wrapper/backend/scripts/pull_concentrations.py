@@ -93,9 +93,9 @@ def _fetch_html_with_retries(
 def pull_concentrations() -> List[str]:
     values: Set[str] = set(DEFAULT_CONCENTRATIONS)
     headers = {"User-Agent": "Mozilla/5.0 (compatible; MentorMatcher/1.0)"}
-    timeout_seconds = float(os.getenv("WRAPPER_CONCENTRATIONS_HTTP_TIMEOUT_SECONDS", "15"))
-    max_attempts = max(1, int(os.getenv("WRAPPER_CONCENTRATIONS_HTTP_MAX_ATTEMPTS", "3")))
-    backoff_seconds = float(os.getenv("WRAPPER_CONCENTRATIONS_HTTP_BACKOFF_SECONDS", "1.5"))
+    timeout_seconds = float(os.getenv("WRAPPER_CONCENTRATIONS_HTTP_TIMEOUT_SECONDS", "8"))
+    max_attempts = max(1, int(os.getenv("WRAPPER_CONCENTRATIONS_HTTP_MAX_ATTEMPTS", "2")))
+    backoff_seconds = float(os.getenv("WRAPPER_CONCENTRATIONS_HTTP_BACKOFF_SECONDS", "1.0"))
     session = requests.Session()
 
     fetched_any = False
