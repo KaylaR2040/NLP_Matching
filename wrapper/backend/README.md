@@ -195,8 +195,12 @@ uvicorn app.main:app --reload --port 8000
   - `WRAPPER_MATCHING_STATE_PATH`
 - LinkedIn enrichment env vars:
   - `WRAPPER_LINKEDIN_ENRICHMENT_ENABLED`
-  - `WRAPPER_LINKEDIN_ENRICHMENT_PROVIDER` (`disabled`, `mock`, `proxycurl`, `http`)
+  - `WRAPPER_LINKEDIN_ENRICHMENT_PROVIDER` (`auto`, `proxycurl`, `http`, `duckduckgo`, `mock`)
+  - `WRAPPER_LINKEDIN_ENRICHMENT_HARD_DISABLE` (set `true` only to force-disable enrichment)
   - `WRAPPER_LINKEDIN_ENRICH_MIN_INTERVAL_SECONDS`
   - `WRAPPER_LINKEDIN_ENRICHMENT_TIMEOUT_SECONDS`
   - `WRAPPER_LINKEDIN_PROXYCURL_API_KEY` (if using proxycurl)
   - `WRAPPER_LINKEDIN_PROVIDER_BASE_URL` + `WRAPPER_LINKEDIN_PROVIDER_API_KEY` (if using generic http provider)
+  - `WRAPPER_LINKEDIN_SEARCH_ENDPOINT` (optional duckduckgo/html endpoint override)
+  - `WRAPPER_LINKEDIN_PUBLIC_PHOTO_ENDPOINT_TEMPLATE` (optional avatar/photo fallback, `{slug}` placeholder)
+  - `WRAPPER_LINKEDIN_PUBLIC_PHOTO_TIMEOUT_SECONDS` (optional timeout for public photo lookup)

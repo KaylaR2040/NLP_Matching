@@ -11,6 +11,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from .linkedin_enrichment import normalize_linkedin_profile_url
+
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_MENTOR_STORE_PATH = REPO_ROOT / "wrapper" / "backend" / "data" / "mentors" / "mentors_store.json"
@@ -113,6 +115,48 @@ class MentorStore:
 
     def deactivate(self, mentor_id: str, *, actor: str) -> Dict[str, Any]:
         return self.update(mentor_id, {"is_active": False}, actor=actor)
+
+    def delete_many(self, mentor_ids: List[str]) -> Dict[str, Any]:
+        targets: List[str] = []
+        seen: set[str] = set()
+        for mentor_id in mentor_ids:
+            normalized = str(mentor_id).strip()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            targets.append(normalized)
+
+        if not targets:
+            return {
+                "requested": 0,
+                "deleted": 0,
+                "deleted_mentor_ids": [],
+                "not_found_mentor_ids": [],
+            }
+
+        target_set = set(targets)
+        records = self.load_records()
+        kept_records: List[Dict[str, Any]] = []
+        deleted_ids: List[str] = []
+
+        for record in records:
+            mentor_id = str(record.get("mentor_id", "")).strip()
+            if mentor_id and mentor_id in target_set:
+                deleted_ids.append(mentor_id)
+                continue
+            kept_records.append(record)
+
+        if deleted_ids:
+            self._save_records(kept_records)
+
+        deleted_set = set(deleted_ids)
+        not_found = [mentor_id for mentor_id in targets if mentor_id not in deleted_set]
+        return {
+            "requested": len(targets),
+            "deleted": len(deleted_ids),
+            "deleted_mentor_ids": deleted_ids,
+            "not_found_mentor_ids": not_found,
+        }
 
     def import_csv_bytes(
         self,
@@ -341,7 +385,12 @@ class MentorStore:
             if key in MENTOR_FIELDS:
                 continue
             extra[key] = value
-        base["extra_fields"] = extra
+        base["linkedin_url"] = _extract_canonical_linkedin_url(record, extra_fields=extra)
+        base["extra_fields"] = {
+            key: value
+            for key, value in extra.items()
+            if _normalize_header(str(key)) not in LINKEDIN_EXTRA_FIELD_HEADERS
+        }
 
         if not str(base.get("source_csv_path", "")).strip():
             base["source_csv_path"] = "nlp_project/data/mentor_real.csv"
@@ -592,6 +641,73 @@ def _normalize_header(value: str) -> str:
     lowered = (value or "").strip().lower()
     lowered = re.sub(r"\\s+", " ", lowered)
     return lowered
+
+
+LINKEDIN_RECORD_ALIAS_KEYS: List[str] = [
+    "linkedin_url",
+    "linkedin",
+    "linkedin_url",
+    "linkedinUrl",
+    "linkedinURL",
+    "profile_link",
+    "profileLink",
+    "profile_url",
+    "profileUrl",
+    "profile_link_url",
+    "profileLinkUrl",
+    "profile",
+]
+
+LINKEDIN_EXTRA_FIELD_HEADERS = {
+    "linkedin",
+    "linkedin url",
+    "linkedin_url",
+    "linkedin profile",
+    "linkedin profile url",
+    "linkedin url / profile",
+    "profile link",
+    "profile url",
+    "linkedin profile link",
+}
+
+
+def _normalize_linkedin_profile(raw_value: Any) -> str:
+    text = _stringify(raw_value)
+    if not text:
+        return ""
+    normalized, error = normalize_linkedin_profile_url(text)
+    if not error and normalized:
+        return normalized
+    if "linkedin.com/in/" in text.lower() or "linkedin.com/pub/" in text.lower():
+        if not text.startswith(("http://", "https://")):
+            return f"https://{text}"
+        return text
+    return ""
+
+
+def _extract_canonical_linkedin_url(record: Dict[str, Any], *, extra_fields: Dict[str, Any]) -> str:
+    candidates: List[str] = []
+
+    def _append_candidate(value: Any) -> None:
+        text = _stringify(value)
+        if not text:
+            return
+        if text in candidates:
+            return
+        candidates.append(text)
+
+    for key in LINKEDIN_RECORD_ALIAS_KEYS:
+        _append_candidate(record.get(key))
+
+    for key, value in extra_fields.items():
+        if _normalize_header(str(key)) in LINKEDIN_EXTRA_FIELD_HEADERS:
+            _append_candidate(value)
+
+    for candidate in candidates:
+        normalized = _normalize_linkedin_profile(candidate)
+        if normalized:
+            return normalized
+    return ""
 
 
 def _is_non_empty_value(value: Any) -> bool:

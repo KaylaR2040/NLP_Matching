@@ -58,6 +58,7 @@ class MentorRecord {
   });
 
   factory MentorRecord.fromJson(Map<String, dynamic> json) {
+    final extras = (json['extra_fields'] as Map<String, dynamic>? ?? const {});
     final firstName = (json['first_name'] ?? '').toString();
     final lastName = (json['last_name'] ?? '').toString();
     final email = (json['email'] ?? '').toString();
@@ -65,6 +66,7 @@ class MentorRecord {
         .where((value) => value.trim().isNotEmpty)
         .join(' ')
         .trim();
+    final linkedInUrl = _extractLinkedInUrl(json, extras);
 
     return MentorRecord(
       mentorId: (json['mentor_id'] ?? '').toString(),
@@ -74,7 +76,7 @@ class MentorRecord {
       fullName: (json['full_name'] ?? '').toString().isNotEmpty
           ? (json['full_name'] ?? '').toString()
           : (computedName.isNotEmpty ? computedName : email),
-      linkedInUrl: (json['linkedin_url'] ?? '').toString(),
+      linkedInUrl: linkedInUrl,
       profilePhotoUrl: (json['profile_photo_url'] ?? '').toString(),
       currentCompany: (json['current_company'] ?? '').toString(),
       currentJobTitle: (json['current_job_title'] ?? '').toString(),
@@ -98,7 +100,7 @@ class MentorRecord {
       lastModifiedBy: (json['last_modified_by'] ?? '').toString(),
       lastEnrichedAt: (json['last_enriched_at'] ?? '').toString(),
       enrichmentStatus: (json['enrichment_status'] ?? '').toString(),
-      extraFields: (json['extra_fields'] as Map<String, dynamic>? ?? const {}),
+      extraFields: extras,
     );
   }
 
@@ -192,6 +194,46 @@ class MentorRecord {
       extraFields: extraFields ?? this.extraFields,
     );
   }
+}
+
+String _extractLinkedInUrl(
+  Map<String, dynamic> json,
+  Map<String, dynamic> extraFields,
+) {
+  final directCandidates = [
+    json['linkedin_url'],
+    json['linkedin'],
+    json['linkedinUrl'],
+    json['profile_link'],
+    json['profile_url'],
+  ];
+  for (final candidate in directCandidates) {
+    final value = (candidate ?? '').toString().trim();
+    if (value.isNotEmpty) {
+      return value;
+    }
+  }
+
+  for (final entry in extraFields.entries) {
+    final key = _normalizeHeader(entry.key);
+    if (key == 'linkedin' ||
+        key == 'linkedin url' ||
+        key == 'linkedin_url' ||
+        key == 'linkedin profile' ||
+        key == 'linkedin profile url' ||
+        key == 'profile link' ||
+        key == 'profile url') {
+      final value = (entry.value ?? '').toString().trim();
+      if (value.isNotEmpty) {
+        return value;
+      }
+    }
+  }
+  return '';
+}
+
+String _normalizeHeader(String value) {
+  return value.trim().toLowerCase().replaceAll('_', ' ').replaceAll(RegExp(r'\s+'), ' ');
 }
 
 class MentorsListResult {

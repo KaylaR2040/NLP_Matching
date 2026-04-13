@@ -30,9 +30,12 @@ from .models import (
     DevFileRequest,
     DevFileSaveRequest,
     ExportAssignmentsRequest,
+    LinkedInEnrichmentConfigResponse,
     LoginRequest,
     LoginResponse,
     MeResponse,
+    MentorBulkDeleteRequest,
+    MentorBulkDeleteResponse,
     MentorCreateRequest,
     MentorEnrichmentResponse,
     MentorImportResponse,
@@ -44,7 +47,10 @@ from .models import (
     SaveMajorsRequest,
     ScriptRequest,
 )
-from .linkedin_enrichment import build_linkedin_enrichment_service_from_env
+from .linkedin_enrichment import (
+    build_linkedin_enrichment_service_from_env,
+    normalize_linkedin_profile_url,
+)
 from .mentor_store import DEFAULT_MENTOR_BACKUP_DIR, DEFAULT_MENTOR_STORE_PATH, MentorStore
 
 
@@ -623,6 +629,160 @@ def _mentor_record_for_api(record: Dict[str, Any]) -> Dict[str, Any]:
     return payload
 
 
+def _csv_text(row: Dict[str, Any], key: str) -> str:
+    return str(row.get(key, "")).strip()
+
+
+LINKEDIN_RECORD_ALIAS_KEYS: List[str] = [
+    "linkedin_url",
+    "linkedin",
+    "linkedinUrl",
+    "linkedinURL",
+    "profile_link",
+    "profileLink",
+    "profile_url",
+    "profileUrl",
+    "profile",
+]
+
+LINKEDIN_EXTRA_ALIAS_HEADERS: Set[str] = {
+    "linkedin",
+    "linkedin url",
+    "linkedin_url",
+    "linkedin profile",
+    "linkedin profile url",
+    "profile link",
+    "profile url",
+    "linkedin profile link",
+}
+
+
+def _header_key(value: str) -> str:
+    return " ".join(str(value).strip().lower().replace("_", " ").split())
+
+
+def _collect_linkedin_field_values(record: Dict[str, Any]) -> Dict[str, str]:
+    found: Dict[str, str] = {}
+    for key in LINKEDIN_RECORD_ALIAS_KEYS:
+        value = str(record.get(key, "")).strip()
+        if value:
+            found[key] = value
+
+    extras = record.get("extra_fields")
+    if isinstance(extras, dict):
+        for key, value in extras.items():
+            if _header_key(str(key)) not in LINKEDIN_EXTRA_ALIAS_HEADERS:
+                continue
+            text = str(value).strip()
+            if text:
+                found[f"extra_fields.{key}"] = text
+    return found
+
+
+def _resolve_record_linkedin_url(record: Dict[str, Any]) -> Tuple[str, str, str, Dict[str, str]]:
+    raw_fields = _collect_linkedin_field_values(record)
+    selected_source = ""
+    selected_raw = ""
+
+    for key in LINKEDIN_RECORD_ALIAS_KEYS:
+        value = raw_fields.get(key, "").strip()
+        if value:
+            selected_source = key
+            selected_raw = value
+            break
+
+    if not selected_raw:
+        for key, value in raw_fields.items():
+            if not key.startswith("extra_fields."):
+                continue
+            if value.strip():
+                selected_source = key
+                selected_raw = value.strip()
+                break
+
+    normalized_url = ""
+    if selected_raw:
+        normalized_url, _ = normalize_linkedin_profile_url(selected_raw)
+        return selected_raw, normalized_url, selected_source, raw_fields
+
+    fallback = _lookup_canonical_mentor_profile_fallback(record)
+    fallback_url = str(fallback.get("linkedin_url", "")).strip()
+    if fallback_url:
+        fallback_normalized, _ = normalize_linkedin_profile_url(fallback_url)
+        return fallback_url, fallback_normalized, "csv_fallback.linkedin_url", raw_fields
+
+    return "", "", "", raw_fields
+
+
+def _lookup_canonical_mentor_profile_fallback(record: Dict[str, Any]) -> Dict[str, str]:
+    source_path = MENTOR_SOURCE_CSV_PATH
+    if not source_path.exists():
+        return {}
+
+    record_linkedin = _csv_text(record, "linkedin_url")
+    normalized_record_linkedin = ""
+    if record_linkedin:
+        normalized_record_linkedin, _ = normalize_linkedin_profile_url(record_linkedin)
+    record_email = _csv_text(record, "email").lower()
+
+    try:
+        with source_path.open("r", encoding="utf-8-sig", newline="") as handle:
+            reader = csv.DictReader(handle)
+            for row in reader:
+                row_linkedin = _csv_text(row, "LinkedIn")
+                normalized_row_linkedin = ""
+                if row_linkedin:
+                    normalized_row_linkedin, _ = normalize_linkedin_profile_url(row_linkedin)
+                row_email = _csv_text(row, "Email").lower()
+
+                matches_linkedin = bool(
+                    normalized_record_linkedin
+                    and normalized_row_linkedin
+                    and normalized_record_linkedin == normalized_row_linkedin
+                )
+                matches_email = bool(record_email and row_email and record_email == row_email)
+                if not (matches_linkedin or matches_email):
+                    continue
+
+                fallback: Dict[str, str] = {}
+                mappings = {
+                    "LinkedIn": "linkedin_url",
+                    "Profile Photo URL": "profile_photo_url",
+                    "Current Company": "current_company",
+                    "Current Job Title": "current_job_title",
+                    "Current City State": "current_location",
+                    "Current City": "current_city",
+                    "Current State": "current_state",
+                }
+                for source_key, target_key in mappings.items():
+                    value = _csv_text(row, source_key)
+                    if value:
+                        fallback[target_key] = value
+
+                if (
+                    "current_location" not in fallback
+                    and ("current_city" in fallback or "current_state" in fallback)
+                ):
+                    fallback["current_location"] = ", ".join(
+                        part
+                        for part in [
+                            fallback.get("current_city", "").strip(),
+                            fallback.get("current_state", "").strip(),
+                        ]
+                        if part
+                    )
+                return fallback
+    except Exception as exc:
+        LOG.warning(
+            "linkedin_csv_fallback_read_failed path=%s error=%s",
+            source_path,
+            exc,
+        )
+        return {}
+
+    return {}
+
+
 def _parse_pair_rows_for_api(pairs: Iterable[Any]) -> List[Dict[str, str]]:
     rows: List[Dict[str, str]] = []
     for pair in pairs:
@@ -1043,6 +1203,33 @@ def deactivate_mentor(
     return MentorRecord(**_mentor_record_for_api(updated))
 
 
+@app.post("/mentors/bulk-delete", response_model=MentorBulkDeleteResponse)
+def bulk_delete_mentors(
+    request: MentorBulkDeleteRequest,
+    _session: AuthSession = Depends(_require_auth(require_dev=True)),
+) -> MentorBulkDeleteResponse:
+    result = MENTOR_STORE.delete_many(request.mentor_ids)
+    return MentorBulkDeleteResponse(
+        requested=int(result.get("requested", 0)),
+        deleted=int(result.get("deleted", 0)),
+        deleted_mentor_ids=[str(item) for item in result.get("deleted_mentor_ids", [])],
+        not_found_mentor_ids=[str(item) for item in result.get("not_found_mentor_ids", [])],
+    )
+
+
+@app.get("/mentors/linkedin-enrichment/config", response_model=LinkedInEnrichmentConfigResponse)
+def get_linkedin_enrichment_config(
+    _session: AuthSession = Depends(_require_auth()),
+) -> LinkedInEnrichmentConfigResponse:
+    config = LINKEDIN_ENRICHMENT.config()
+    return LinkedInEnrichmentConfigResponse(
+        enabled=config.get("enabled") == True,
+        provider=str(config.get("provider", "")),
+        disabled_reason=str(config.get("disabled_reason", "")),
+        min_interval_seconds=int(config.get("min_interval_seconds", 0)),
+    )
+
+
 @app.post("/mentors/{mentor_id}/enrich-linkedin", response_model=MentorEnrichmentResponse)
 def enqueue_linkedin_enrichment(
     mentor_id: str,
@@ -1051,24 +1238,53 @@ def enqueue_linkedin_enrichment(
     record = MENTOR_STORE.get_by_id(mentor_id)
     if record is None:
         raise HTTPException(status_code=404, detail=f"Mentor '{mentor_id}' was not found")
-    linkedin_url = str(record.get("linkedin_url", "")).strip()
-    if not linkedin_url:
+    mentor_name = (
+        str(record.get("full_name", "")).strip()
+        or " ".join(
+            part for part in [str(record.get("first_name", "")).strip(), str(record.get("last_name", "")).strip()] if part
+        ).strip()
+        or mentor_id
+    )
+    raw_linkedin_url, normalized_linkedin_url, linkedin_source, raw_linkedin_fields = _resolve_record_linkedin_url(
+        record
+    )
+    LOG.info(
+        "linkedin_enrichment_url_resolution mentor_id=%s mentor_name=%s raw_fields=%s selected_source=%s selected_raw=%s normalized_url=%s",
+        mentor_id,
+        mentor_name,
+        raw_linkedin_fields,
+        linkedin_source,
+        raw_linkedin_url,
+        normalized_linkedin_url,
+    )
+
+    if not raw_linkedin_url:
         return MentorEnrichmentResponse(
             mentor_id=mentor_id,
             enrichment_status="failed",
-            message="Mentor has no LinkedIn URL. Add one before enrichment.",
+            message="No LinkedIn URL is saved for this mentor.",
             updated_fields=[],
             mentor=MentorRecord(**_mentor_record_for_api(record)),
         )
 
+    linkedin_url_for_enrichment = normalized_linkedin_url or raw_linkedin_url
+    if normalized_linkedin_url and str(record.get("linkedin_url", "")).strip() != normalized_linkedin_url:
+        record = MENTOR_STORE.update(
+            mentor_id,
+            {"linkedin_url": normalized_linkedin_url},
+            actor=session.username,
+        )
+
     LOG.info(
-        "linkedin_enrichment_attempt mentor_id=%s actor=%s provider=%s",
+        "linkedin_enrichment_attempt mentor_id=%s mentor_name=%s actor=%s provider=%s linkedin_url=%s",
         mentor_id,
+        mentor_name,
         session.username,
         LINKEDIN_ENRICHMENT.provider_name,
+        linkedin_url_for_enrichment,
     )
-    result = LINKEDIN_ENRICHMENT.enrich_for_mentor(mentor_id, linkedin_url)
-    updates = {
+    result = LINKEDIN_ENRICHMENT.enrich_for_mentor(mentor_id, linkedin_url_for_enrichment)
+    allowed_updates = {
         key: value
         for key, value in result.updates.items()
         if str(value).strip()
@@ -1083,37 +1299,116 @@ def enqueue_linkedin_enrichment(
         }
     }
 
-    if result.status in {"success", "partial"} and updates:
-        updates["last_enriched_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        updates["enrichment_status"] = result.status
-        updates["enrichment_provider_metadata"] = result.provider_metadata
-        updated = MENTOR_STORE.update(mentor_id, updates, actor=session.username)
+    def _normalize_for_compare(value: Any) -> str:
+        return str(value or "").strip().lower()
+
+    changed_updates = {
+        key: value
+        for key, value in allowed_updates.items()
+        if _normalize_for_compare(value) != _normalize_for_compare(record.get(key))
+    }
+
+    fallback_updates: Dict[str, str] = {}
+    fallback_changed_updates: Dict[str, str] = {}
+    if not changed_updates:
+        fallback_updates = _lookup_canonical_mentor_profile_fallback(record)
+        fallback_changed_updates = {
+            key: value
+            for key, value in fallback_updates.items()
+            if _normalize_for_compare(value) != _normalize_for_compare(record.get(key))
+        }
+
+        existing_photo = str(record.get("profile_photo_url", "")).strip()
+        if (
+            not fallback_updates.get("profile_photo_url")
+            and not allowed_updates.get("profile_photo_url")
+            and "ui-avatars.com/api/" in existing_photo
+        ):
+            fallback_changed_updates["profile_photo_url"] = ""
+
+    normalized_url = str((result.provider_metadata or {}).get("normalized_url", "")).strip()
+    LOG.info(
+        "linkedin_enrichment_mapping mentor_id=%s mentor_name=%s provider=%s status=%s normalized_url=%s extracted_fields=%s changed_fields=%s",
+        mentor_id,
+        mentor_name,
+        LINKEDIN_ENRICHMENT.provider_name,
+        result.status,
+        normalized_url,
+        sorted(allowed_updates.keys()),
+        sorted(changed_updates.keys()),
+    )
+
+    if fallback_changed_updates:
         LOG.info(
-            "linkedin_enrichment_success mentor_id=%s actor=%s status=%s updated_fields=%s",
+            "linkedin_enrichment_csv_fallback mentor_id=%s mentor_name=%s fallback_fields=%s",
             mentor_id,
+            mentor_name,
+            sorted(fallback_changed_updates.keys()),
+        )
+
+    if result.status in {"success", "partial"} and changed_updates:
+        changed_updates["last_enriched_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        changed_updates["enrichment_status"] = result.status
+        changed_updates["enrichment_provider_metadata"] = result.provider_metadata
+        updated = MENTOR_STORE.update(mentor_id, changed_updates, actor=session.username)
+        LOG.info(
+            "linkedin_enrichment_success mentor_id=%s mentor_name=%s actor=%s status=%s updated_fields=%s",
+            mentor_id,
+            mentor_name,
             session.username,
             result.status,
-            sorted(updates.keys()),
+            sorted(changed_updates.keys()),
         )
         return MentorEnrichmentResponse(
             mentor_id=mentor_id,
             enrichment_status=result.status,
             message=result.message,
-            updated_fields=sorted(updates.keys()),
+            updated_fields=sorted(changed_updates.keys()),
             mentor=MentorRecord(**_mentor_record_for_api(updated)),
         )
 
+    if fallback_changed_updates:
+        fallback_changed_updates["last_enriched_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        fallback_changed_updates["enrichment_status"] = "partial"
+        fallback_metadata = dict(result.provider_metadata or {})
+        fallback_metadata["fallback_source"] = str(MENTOR_SOURCE_CSV_PATH)
+        fallback_changed_updates["enrichment_provider_metadata"] = fallback_metadata
+        updated = MENTOR_STORE.update(mentor_id, fallback_changed_updates, actor=session.username)
+        fallback_message = (
+            "LinkedIn provider returned no usable profile fields; "
+            "updated from canonical mentor profile fallback data."
+        )
+        return MentorEnrichmentResponse(
+            mentor_id=mentor_id,
+            enrichment_status="partial",
+            message=fallback_message,
+            updated_fields=sorted(fallback_changed_updates.keys()),
+            mentor=MentorRecord(**_mentor_record_for_api(updated)),
+        )
+
+    if result.status in {"success", "partial"} and not allowed_updates:
+        message = (
+            "LinkedIn enrichment completed, but no usable profile fields were returned for this URL."
+        )
+    elif result.status in {"success", "partial"} and not changed_updates:
+        message = "LinkedIn enrichment completed, but no profile fields changed."
+    else:
+        message = result.message
+
     LOG.warning(
-        "linkedin_enrichment_failed mentor_id=%s actor=%s status=%s message=%s",
+        "linkedin_enrichment_failed mentor_id=%s mentor_name=%s actor=%s status=%s extracted_fields=%s changed_fields=%s message=%s",
         mentor_id,
+        mentor_name,
         session.username,
         result.status,
-        result.message,
+        sorted(allowed_updates.keys()),
+        sorted(changed_updates.keys()),
+        message,
     )
     return MentorEnrichmentResponse(
         mentor_id=mentor_id,
-        enrichment_status=result.status,
-        message=result.message,
+        enrichment_status="failed" if result.status in {"success", "partial"} else result.status,
+        message=message,
         updated_fields=[],
         mentor=MentorRecord(**_mentor_record_for_api(record)),
     )
@@ -1122,7 +1417,7 @@ def enqueue_linkedin_enrichment(
 @app.post("/run_match")
 async def run_match(
     mentee_file: UploadFile = File(...),
-    mentor_file: UploadFile = File(...),
+    mentor_file: Optional[UploadFile] = File(None),
     payload_json: str = Form("{}"),
     _session: AuthSession = Depends(_require_auth()),
 ) -> Dict[str, Any]:
@@ -1139,9 +1434,28 @@ async def run_match(
         mentee_csv = tmp_dir / "mentees.csv"
         mentor_csv = tmp_dir / "mentors.csv"
         state_path = tmp_dir / "state.json"
+        mentor_source = "manager_store"
 
         _as_csv(mentee_file.filename or "mentees.csv", await mentee_file.read(), mentee_csv)
-        _as_csv(mentor_file.filename or "mentors.csv", await mentor_file.read(), mentor_csv)
+        mentor_payload: Optional[bytes] = None
+        mentor_filename = "mentors.csv"
+        if mentor_file is not None:
+            mentor_payload = await mentor_file.read()
+            mentor_filename = mentor_file.filename or mentor_filename
+
+        if mentor_payload:
+            _as_csv(mentor_filename, mentor_payload, mentor_csv)
+            mentor_source = "uploaded_file"
+        else:
+            export_payload = MENTOR_STORE.export_csv(include_inactive=False)
+            if int(export_payload.get("rows", 0)) <= 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No active mentors are available in Mentor Manager. Add mentors before running matching.",
+                )
+            mentor_csv.write_text(str(export_payload.get("csv_text", "")), encoding="utf-8")
+            mentor_source = "mentor_manager"
+
         mentor_capacities = _extract_mentor_capacity_map(mentor_csv)
         state_payload = _state_dict(payload)
         state_path.write_text(json.dumps(state_payload, indent=2), encoding="utf-8")
@@ -1189,6 +1503,7 @@ async def run_match(
             "status": "ok",
             "result": result,
             "stdout": completed.stdout,
+            "mentor_source": mentor_source,
         }
 
 
