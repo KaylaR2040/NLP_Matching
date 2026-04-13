@@ -1040,9 +1040,28 @@ def _attach_mentor_capacity_metadata(result: Dict[str, Any], capacities: Dict[st
     result["mentor_capacity"] = summary
 
 
+@app.get("/")
+def root() -> Dict[str, str]:
+    return {
+        "status": "ok",
+        "service": "NLP Mentor Matcher Wrapper API",
+        "health": "/health",
+    }
+
+
 @app.get("/health")
 def health() -> Dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api")
+def api_root() -> Dict[str, str]:
+    return root()
+
+
+@app.get("/api/health")
+def api_health() -> Dict[str, str]:
+    return health()
 
 
 @app.post("/login", response_model=LoginResponse)
