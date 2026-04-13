@@ -229,6 +229,10 @@ python -c "from api.index import app; print(app.title)"
 
 - Set Vercel Root Directory to `wrapper/backend`.
 - Keep `api/index.py` + `vercel.json` as committed.
+- Keep `.python-version` committed so Vercel uses a compatible Python runtime.
+- Before deploying, bundle matcher files into backend root:
+  - `python scripts/prepare_vercel_bundle.py`
+  - This copies `../../nlp_project` essentials into `wrapper/backend/nlp_project`.
 - Configure env vars from `.env.example` in Vercel project settings.
 - `run_match` requires `nlp_project/main.py`; if not bundled in deployment, set `WRAPPER_NLP_PROJECT_DIR` to an available path or disable matching endpoints.
 - File-backed data paths (`data/...`) are not durable in serverless. Use external storage/DB for production persistence.
