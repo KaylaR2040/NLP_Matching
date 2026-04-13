@@ -572,6 +572,39 @@ def _run_script_with_output_fallback(script_path: Path, output_path: Path) -> Di
         raise
 
 
+def _is_timeout_script_failure(detail: Dict[str, Any]) -> bool:
+    stderr = str(detail.get("stderr", ""))
+    stdout = str(detail.get("stdout", ""))
+    combined = f"{stderr}\n{stdout}".lower()
+    timeout_markers = (
+        "read timed out",
+        "readtimeout",
+        "socket.timeout",
+        "timed out",
+        "timeouterror",
+        "urllib3.exceptions.readtimeouterror",
+        "requests.exceptions.readtimeout",
+    )
+    return any(marker in combined for marker in timeout_markers)
+
+
+def _timeout_degraded_result(
+    *,
+    script_path: Path,
+    detail: Dict[str, Any],
+) -> Dict[str, Any]:
+    return {
+        "status": "degraded",
+        "script": _normalize_repo_path_for_api(str(script_path), fallback=script_path.name),
+        "message": (
+            "Update script timed out while fetching remote data; "
+            "kept the current local file unchanged."
+        ),
+        "stdout": str(detail.get("stdout", "")),
+        "stderr": str(detail.get("stderr", "")),
+    }
+
+
 def _read_text_file(path: Path) -> Dict[str, Any]:
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists():
@@ -1514,13 +1547,28 @@ def update_orgs(
 ) -> Dict[str, Any]:
     _audit_dev_action("update_orgs", _session)
     if request.script_path:
-        result = _run_script_with_output_fallback(Path(request.script_path).expanduser(), ORGS_PATH)
+        script_path = Path(request.script_path).expanduser()
+        try:
+            result = _run_script_with_output_fallback(script_path, ORGS_PATH)
+        except HTTPException as exc:
+            detail = exc.detail if isinstance(exc.detail, dict) else {}
+            if _is_timeout_script_failure(detail):
+                result = _timeout_degraded_result(script_path=script_path, detail=detail)
+            else:
+                raise
         result["file"] = _read_text_file(ORGS_PATH)
         return result
 
     for candidate in _script_candidates("orgs"):
         if candidate.exists():
-            result = _run_script_with_output_fallback(candidate, ORGS_PATH)
+            try:
+                result = _run_script_with_output_fallback(candidate, ORGS_PATH)
+            except HTTPException as exc:
+                detail = exc.detail if isinstance(exc.detail, dict) else {}
+                if _is_timeout_script_failure(detail):
+                    result = _timeout_degraded_result(script_path=candidate, detail=detail)
+                else:
+                    raise
             result["file"] = _read_text_file(ORGS_PATH)
             return result
 
@@ -1539,16 +1587,31 @@ def update_concentrations(
 ) -> Dict[str, Any]:
     _audit_dev_action("update_concentrations", _session)
     if request.script_path:
-        result = _run_script_with_output_fallback(
-            Path(request.script_path).expanduser(),
-            CONCENTRATIONS_PATH,
-        )
+        script_path = Path(request.script_path).expanduser()
+        try:
+            result = _run_script_with_output_fallback(
+                script_path,
+                CONCENTRATIONS_PATH,
+            )
+        except HTTPException as exc:
+            detail = exc.detail if isinstance(exc.detail, dict) else {}
+            if _is_timeout_script_failure(detail):
+                result = _timeout_degraded_result(script_path=script_path, detail=detail)
+            else:
+                raise
         result["file"] = _read_text_file(CONCENTRATIONS_PATH)
         return result
 
     for candidate in _script_candidates("concentrations"):
         if candidate.exists():
-            result = _run_script_with_output_fallback(candidate, CONCENTRATIONS_PATH)
+            try:
+                result = _run_script_with_output_fallback(candidate, CONCENTRATIONS_PATH)
+            except HTTPException as exc:
+                detail = exc.detail if isinstance(exc.detail, dict) else {}
+                if _is_timeout_script_failure(detail):
+                    result = _timeout_degraded_result(script_path=candidate, detail=detail)
+                else:
+                    raise
             result["file"] = _read_text_file(CONCENTRATIONS_PATH)
             return result
 
@@ -1622,7 +1685,14 @@ def run_dev_file_update(
     backup_path = _backup_current_file(output_path, request.file_key)
     for candidate in _script_candidates(str(script_kind)):
         if candidate.exists():
-            result = _run_script_with_output_fallback(candidate, output_path)
+            try:
+                result = _run_script_with_output_fallback(candidate, output_path)
+            except HTTPException as exc:
+                detail = exc.detail if isinstance(exc.detail, dict) else {}
+                if _is_timeout_script_failure(detail):
+                    result = _timeout_degraded_result(script_path=candidate, detail=detail)
+                else:
+                    raise
             result["file"] = _read_text_file(output_path)
             result["file_key"] = request.file_key
             result["label"] = str(entry["label"])

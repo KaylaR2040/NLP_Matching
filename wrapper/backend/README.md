@@ -204,3 +204,7 @@ uvicorn app.main:app --reload --port 8000
   - `WRAPPER_LINKEDIN_SEARCH_ENDPOINT` (optional duckduckgo/html endpoint override)
   - `WRAPPER_LINKEDIN_PUBLIC_PHOTO_ENDPOINT_TEMPLATE` (optional avatar/photo fallback, `{slug}` placeholder)
   - `WRAPPER_LINKEDIN_PUBLIC_PHOTO_TIMEOUT_SECONDS` (optional timeout for public photo lookup)
+- Concentrations pull env vars:
+  - `WRAPPER_CONCENTRATIONS_HTTP_TIMEOUT_SECONDS`
+  - `WRAPPER_CONCENTRATIONS_HTTP_MAX_ATTEMPTS`
+  - `WRAPPER_CONCENTRATIONS_HTTP_BACKOFF_SECONDS`
