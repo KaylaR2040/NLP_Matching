@@ -205,10 +205,18 @@ python -c "from api.index import app; print(app.title)"
   - `WRAPPER_DATA_DIR`
   - `WRAPPER_BACKEND_ENV_PATH`
   - `WRAPPER_NLP_PROJECT_DIR`
+  - `WRAPPER_DEV_RUNTIME_EDIT_DIR` (defaults to `/tmp/nlp_matching_runtime/dev_files`)
   - `WRAPPER_MENTOR_STORE_PATH`
   - `WRAPPER_MENTOR_BACKUP_DIR`
   - `WRAPPER_MENTOR_SOURCE_CSV_PATH`
   - `WRAPPER_MATCHING_STATE_PATH`
+- Optional GitHub persistence for dev-file edits:
+  - `WRAPPER_GITHUB_SYNC_ENABLED`
+  - `WRAPPER_GITHUB_SYNC_TOKEN`
+  - `WRAPPER_GITHUB_SYNC_REPO` (`owner/repo`)
+  - `WRAPPER_GITHUB_SYNC_BRANCH` (default `main`)
+  - `WRAPPER_GITHUB_SYNC_TIMEOUT_SECONDS`
+  - Sync auto-enables when token + repo are present, even if `WRAPPER_GITHUB_SYNC_ENABLED` is unset.
 - LinkedIn enrichment env vars:
   - `WRAPPER_LINKEDIN_ENRICHMENT_ENABLED`
   - `WRAPPER_LINKEDIN_ENRICHMENT_PROVIDER` (`auto`, `proxycurl`, `http`, `duckduckgo`, `mock`)
@@ -238,4 +246,5 @@ python -c "from api.index import app; print(app.title)"
   - This copies `../../nlp_project` essentials into `wrapper/backend/nlp_project` during build.
 - Configure env vars from `.env.example` in Vercel project settings.
 - `run_match` requires `nlp_project/main.py`; if not bundled in deployment, set `WRAPPER_NLP_PROJECT_DIR` to an available path or disable matching endpoints.
+- Dev file editor now includes discoverable text/code files under `nlp_project`, `wrapper/backend/app`, and `wrapper/backend/scripts` (markdown excluded).
 - File-backed data paths (`data/...`) are not durable in serverless. Use external storage/DB for production persistence.
