@@ -151,19 +151,13 @@ class MentorsListResponse(BaseModel):
 
 class MentorImportResponse(BaseModel):
     rows_read: int
-    created: int
-    updated: int
-    unchanged: int
-    skipped: int
+    added: int
+    skipped_duplicates: int
+    invalid: int
     errors: int
+    duplicate_rows: List[Dict[str, Any]] = Field(default_factory=list)
+    invalid_rows: List[Dict[str, Any]] = Field(default_factory=list)
     error_rows: List[Dict[str, Any]] = Field(default_factory=list)
-
-
-class MentorSyncResponse(BaseModel):
-    rows: int
-    columns: List[str] = Field(default_factory=list)
-    output_path: str
-    backup_path: str = ""
 
 
 class MentorEnrichmentResponse(BaseModel):
@@ -190,3 +184,20 @@ class LinkedInEnrichmentConfigResponse(BaseModel):
     provider: str
     disabled_reason: str = ""
     min_interval_seconds: int = 0
+
+
+class MentorStoreMigrationRequest(BaseModel):
+    source_path: str = ""
+    dry_run: bool = False
+
+
+class MentorStoreMigrationResponse(BaseModel):
+    source_path: str
+    rows_read: int
+    added: int
+    skipped_duplicates: int
+    invalid: int
+    errors: int
+    duplicate_rows: List[Dict[str, Any]] = Field(default_factory=list)
+    invalid_rows: List[Dict[str, Any]] = Field(default_factory=list)
+    error_rows: List[Dict[str, Any]] = Field(default_factory=list)

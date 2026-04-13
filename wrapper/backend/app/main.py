@@ -40,7 +40,8 @@ from .models import (
     MentorEnrichmentResponse,
     MentorImportResponse,
     MentorRecord,
-    MentorSyncResponse,
+    MentorStoreMigrationRequest,
+    MentorStoreMigrationResponse,
     MentorsListResponse,
     MentorUpdateRequest,
     RunMatchPayload,
@@ -52,7 +53,12 @@ from .linkedin_enrichment import (
     normalize_linkedin_profile_url,
 )
 from .github_sync import GitHubSyncConfig, GitHubSyncService
-from .mentor_store import DEFAULT_MENTOR_BACKUP_DIR, DEFAULT_MENTOR_STORE_PATH, MentorStore
+from .mentor_store import (
+    DEFAULT_MENTOR_BACKUP_DIR,
+    DEFAULT_MENTOR_STORE_PATH,
+    MentorStore,
+    MentorStoreError,
+)
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -154,6 +160,11 @@ MENTOR_BACKUP_DIR = Path(
     os.getenv("WRAPPER_MENTOR_BACKUP_DIR", str(DEFAULT_MENTOR_BACKUP_DIR))
 )
 MENTOR_BACKUP_DIR = _resolve_from_backend(str(MENTOR_BACKUP_DIR))
+MENTOR_STORAGE_MODE = os.getenv("WRAPPER_MENTOR_STORAGE_MODE", "").strip().lower()
+MENTOR_DATABASE_URL = (
+    os.getenv("WRAPPER_MENTOR_DATABASE_URL", "").strip()
+    or os.getenv("DATABASE_URL", "").strip()
+)
 MENTOR_SOURCE_CSV_PATH = Path(
     os.getenv("WRAPPER_MENTOR_SOURCE_CSV_PATH", str(DEFAULT_MENTOR_SOURCE_CSV))
 )
@@ -248,7 +259,17 @@ FAILED_ATTEMPTS_BY_USER: Dict[str, LoginRateBucket] = defaultdict(
 )
 LOG = logging.getLogger("wrapper.auth")
 REQUEST_LOG = logging.getLogger("wrapper.request")
-MENTOR_STORE = MentorStore(store_path=MENTOR_STORE_PATH, backup_dir=MENTOR_BACKUP_DIR)
+try:
+    MENTOR_STORE = MentorStore(
+        store_path=MENTOR_STORE_PATH,
+        backup_dir=MENTOR_BACKUP_DIR,
+        storage_mode=MENTOR_STORAGE_MODE,
+        database_url=MENTOR_DATABASE_URL,
+        is_vercel=IS_VERCEL,
+    )
+except MentorStoreError as exc:
+    LOG.exception("mentor_storage_init_failed error=%s", exc)
+    raise
 LINKEDIN_ENRICHMENT = build_linkedin_enrichment_service_from_env()
 GITHUB_SYNC = GitHubSyncService(
     GitHubSyncConfig(
@@ -258,6 +279,18 @@ GITHUB_SYNC = GitHubSyncService(
         branch=GITHUB_SYNC_BRANCH,
         timeout_seconds=GITHUB_SYNC_TIMEOUT_SECONDS,
     )
+)
+LOG.info(
+    "mentor_storage_mode=%s database_configured=%s database_url_present=%s",
+    MENTOR_STORE.status().get("mode"),
+    MENTOR_STORE.status().get("database_configured"),
+    MENTOR_STORE.status().get("database_url_present"),
+)
+LOG.info(
+    "github_sync_enabled=%s target_repo=%s target_branch=%s",
+    GITHUB_SYNC.enabled,
+    GITHUB_SYNC.repo,
+    GITHUB_SYNC.branch,
 )
 
 
@@ -607,8 +640,10 @@ def _durable_source(entry: Dict[str, Any]) -> str:
     if _is_repo_backed_entry(entry) and GITHUB_SYNC.enabled:
         return "github"
     if _is_repo_backed_entry(entry) and IS_VERCEL:
-        return "none"
-    return "local_filesystem"
+        return "not_configured"
+    if _is_repo_backed_entry(entry):
+        return "local_only"
+    return "runtime_only" if IS_VERCEL else "local_only"
 
 
 def _writable_dev_path(path: Path) -> Path:
@@ -633,7 +668,12 @@ def _read_text_file(
 ) -> Dict[str, Any]:
     path = path.resolve()
     override = _runtime_override_path(path)
-    content_source = "runtime_override" if override.exists() else "bundled_file"
+    effective_entry = entry or {"path": path, "repo_path": _repo_relative_path(path)}
+    content_source = (
+        "runtime_override"
+        if override.exists()
+        else ("repo_bundle" if _is_repo_backed_entry(effective_entry) else "local_file")
+    )
     github_sync: Dict[str, Any] = {"status": "not_requested"}
 
     if entry and prefer_remote and _is_repo_backed_entry(entry) and GITHUB_SYNC.enabled:
@@ -664,7 +704,7 @@ def _read_text_file(
         "storage_path": _normalize_repo_path_for_api(str(source), fallback=source.name),
         "runtime_override": source == override,
         "content_source": content_source,
-        "durable_source": _durable_source(entry or {"path": path, "repo_path": _repo_relative_path(path)}),
+        "durable_source": _durable_source(effective_entry),
         "github_sync": github_sync,
         "text": text,
         "line_count": line_count,
@@ -757,6 +797,55 @@ def _require_durable_repo_write(entry: Dict[str, Any]) -> None:
             "Set WRAPPER_GITHUB_SYNC_TOKEN and WRAPPER_GITHUB_SYNC_REPO before editing repo-backed files."
         ),
     )
+
+
+def _dev_file_payload_for_key(file_key: str, *, prefer_remote: bool) -> Dict[str, Any]:
+    entry = _dev_file_entry(file_key)
+    payload = _read_text_file(_dev_file_path(file_key), entry=entry, prefer_remote=prefer_remote)
+    payload["file_key"] = file_key
+    payload["label"] = str(entry["label"])
+    payload["has_update_script"] = bool(entry.get("script_kind"))
+    payload["repo_backed"] = _is_repo_backed_entry(entry)
+    return payload
+
+
+def _save_dev_file_text(
+    *,
+    file_key: str,
+    text: str,
+    actor: str,
+) -> Dict[str, Any]:
+    entry = _dev_file_entry(file_key)
+    _require_durable_repo_write(entry)
+    github_sync = {"status": "disabled"}
+    if _is_repo_backed_entry(entry) and GITHUB_SYNC.enabled:
+        github_sync = _sync_dev_file_to_github(
+            entry,
+            text,
+            action="save_dev_file",
+            actor=actor,
+        )
+        _ensure_github_sync_succeeded(github_sync, action="save_dev_file")
+    payload = _write_text_file_with_backup(
+        _dev_file_path(file_key),
+        text,
+        file_key,
+    )
+    payload["github_sync"] = github_sync
+    payload["file_key"] = file_key
+    payload["label"] = str(entry["label"])
+    payload["repo_backed"] = _is_repo_backed_entry(entry)
+    return payload
+
+
+def _virtual_dev_entry(label: str, path: Path) -> Dict[str, Any]:
+    resolved = path.resolve()
+    return {
+        "label": label,
+        "path": resolved,
+        "script_kind": None,
+        "repo_path": _repo_relative_path(resolved),
+    }
 
 
 def _validate_payload(raw: Dict[str, Any]) -> RunMatchPayload:
@@ -980,7 +1069,7 @@ def _normalize_repo_path_for_api(path_value: str, *, fallback: str = "") -> str:
         return value.name
 
 
-def _normalize_source_path_for_api(path_value: str, *, fallback: str = "nlp_project/data/mentor_real.csv") -> str:
+def _normalize_source_path_for_api(path_value: str, *, fallback: str = "mentor_manager") -> str:
     return _normalize_repo_path_for_api(path_value, fallback=fallback)
 
 
@@ -1483,15 +1572,17 @@ async def import_mentors_csv(
     session: AuthSession = Depends(_require_auth(require_dev=True)),
 ) -> MentorImportResponse:
     filename = file.filename or "mentors.csv"
-    if not filename.lower().endswith(".csv"):
-        raise HTTPException(status_code=400, detail="Only CSV files are supported for mentor import")
+    lower_name = filename.lower()
+    if not lower_name.endswith((".csv", ".xlsx", ".xls")):
+        raise HTTPException(status_code=400, detail="Use a CSV or Excel file for mentor import")
 
     content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
-    report = MENTOR_STORE.import_csv_bytes(
+    report = MENTOR_STORE.import_tabular_bytes(
         content,
+        filename=filename,
         source_csv_path=(source_csv_path.strip() or filename),
         actor=session.username,
         dry_run=dry_run,
@@ -1507,7 +1598,7 @@ def export_mentors_csv(
     export_payload = MENTOR_STORE.export_csv(include_inactive=include_inactive)
     csv_text = str(export_payload["csv_text"])
     output = BytesIO(csv_text.encode("utf-8"))
-    headers = {"Content-Disposition": "attachment; filename=mentor_real_export.csv"}
+    headers = {"Content-Disposition": "attachment; filename=mentor_manager_export.csv"}
     return StreamingResponse(output, media_type="text/csv; charset=utf-8", headers=headers)
 
 
@@ -1526,7 +1617,7 @@ def export_mentors_xlsx(
     output = BytesIO()
     frame.to_excel(output, index=False)
     output.seek(0)
-    headers = {"Content-Disposition": "attachment; filename=mentor_real_export.xlsx"}
+    headers = {"Content-Disposition": "attachment; filename=mentor_manager_export.xlsx"}
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1534,20 +1625,36 @@ def export_mentors_xlsx(
     )
 
 
-@app.post("/mentors/sync-to-default-csv", response_model=MentorSyncResponse)
+@app.post("/mentors/admin/migrate-file-store", response_model=MentorStoreMigrationResponse)
+def migrate_file_store_to_postgres(
+    request: MentorStoreMigrationRequest,
+    session: AuthSession = Depends(_require_auth(require_dev=True)),
+) -> MentorStoreMigrationResponse:
+    source_path = request.source_path.strip() or str(MENTOR_STORE_PATH)
+    try:
+        result = MENTOR_STORE.migrate_from_file_store(
+            Path(source_path),
+            actor=session.username,
+            dry_run=request.dry_run,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (ValueError, MentorStoreError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return MentorStoreMigrationResponse(**result)
+
+
+@app.post("/mentors/sync-to-default-csv")
 def sync_mentors_to_default_csv(
     include_inactive: bool = True,
     _session: AuthSession = Depends(_require_auth(require_dev=True)),
-) -> MentorSyncResponse:
-    result = MENTOR_STORE.write_export_to_path(
-        MENTOR_SOURCE_CSV_PATH,
-        include_inactive=include_inactive,
-    )
-    return MentorSyncResponse(
-        rows=int(result.get("rows", 0)),
-        columns=[str(item) for item in result.get("columns", [])],
-        output_path=_normalize_source_path_for_api(str(result.get("output_path", ""))),
-        backup_path=_normalize_source_path_for_api(str(result.get("backup_path", "")), fallback=""),
+) -> Dict[str, Any]:
+    raise HTTPException(
+        status_code=410,
+        detail=(
+            "Mentor data is now stored as backend application data. "
+            "Use /mentors/export-csv or /mentors/export-xlsx instead of syncing mentors into repo files."
+        ),
     )
 
 
@@ -1569,7 +1676,7 @@ def create_mentor(
 ) -> MentorRecord:
     payload = _model_dict(request, exclude_unset=False)
     if not str(payload.get("source_csv_path", "")).strip():
-        payload["source_csv_path"] = str(MENTOR_SOURCE_CSV_PATH)
+        payload["source_csv_path"] = "mentor_manager"
     try:
         created = MENTOR_STORE.create(payload, actor=session.username)
     except ValueError as exc:
@@ -2034,13 +2141,7 @@ def list_dev_files(_session: AuthSession = Depends(_require_auth(require_dev=Tru
 @app.get("/dev/file/{file_key}")
 def get_dev_file(file_key: str, _session: AuthSession = Depends(_require_auth(require_dev=True))) -> Dict[str, Any]:
     _audit_dev_action(f"get_dev_file:{file_key}", _session)
-    entry = _dev_file_entry(file_key)
-    file_info = _read_text_file(_dev_file_path(file_key), entry=entry, prefer_remote=True)
-    file_info["file_key"] = file_key
-    file_info["label"] = str(entry["label"])
-    file_info["has_update_script"] = bool(entry.get("script_kind"))
-    file_info["repo_backed"] = _is_repo_backed_entry(entry)
-    return file_info
+    return _dev_file_payload_for_key(file_key, prefer_remote=True)
 
 
 @app.post("/dev/file/save")
@@ -2049,27 +2150,11 @@ def save_dev_file(
     _session: AuthSession = Depends(_require_auth(require_dev=True)),
 ) -> Dict[str, Any]:
     _audit_dev_action(f"save_dev_file:{request.file_key}", _session)
-    entry = _dev_file_entry(request.file_key)
-    _require_durable_repo_write(entry)
-    github_sync = {"status": "disabled"}
-    if _is_repo_backed_entry(entry) and GITHUB_SYNC.enabled:
-        github_sync = _sync_dev_file_to_github(
-            entry,
-            request.text,
-            action="save_dev_file",
-            actor=_session.username,
-        )
-        _ensure_github_sync_succeeded(github_sync, action="save_dev_file")
-    payload = _write_text_file_with_backup(
-        _dev_file_path(request.file_key),
-        request.text,
-        request.file_key,
+    return _save_dev_file_text(
+        file_key=request.file_key,
+        text=request.text,
+        actor=_session.username,
     )
-    payload["github_sync"] = github_sync
-    payload["file_key"] = request.file_key
-    payload["label"] = str(entry["label"])
-    payload["repo_backed"] = _is_repo_backed_entry(entry)
-    return payload
 
 
 @app.post("/dev/file/revert-last")
@@ -2157,7 +2242,13 @@ def get_dev_matching_state(
 def get_majors(_session: AuthSession = Depends(_require_auth(require_dev=True))) -> Dict[str, Any]:
     _audit_dev_action("get_majors", _session)
     majors_path = Path(os.getenv("MAJORS_PATH", str(DEFAULT_MAJORS_PATH))).expanduser().resolve()
-    return _read_text_file(majors_path)
+    entry = _virtual_dev_entry("Majors", majors_path)
+    payload = _read_text_file(majors_path, entry=entry, prefer_remote=True)
+    payload["label"] = str(entry["label"])
+    payload["file_key"] = "majors"
+    payload["has_update_script"] = False
+    payload["repo_backed"] = _is_repo_backed_entry(entry)
+    return payload
 
 
 @app.post("/save_majors")
@@ -2167,13 +2258,29 @@ def save_majors(
 ) -> Dict[str, Any]:
     _audit_dev_action("save_majors", _session)
     majors_path = Path(os.getenv("MAJORS_PATH", str(DEFAULT_MAJORS_PATH))).expanduser().resolve()
-    return _write_text_file(majors_path, request.text)
+    entry = _virtual_dev_entry("Majors", majors_path)
+    _require_durable_repo_write(entry)
+    github_sync = {"status": "disabled"}
+    if _is_repo_backed_entry(entry) and GITHUB_SYNC.enabled:
+        github_sync = _sync_dev_file_to_github(
+            entry,
+            request.text,
+            action="save_majors",
+            actor=_session.username,
+        )
+        _ensure_github_sync_succeeded(github_sync, action="save_majors")
+    payload = _write_text_file_with_backup(majors_path, request.text, "majors")
+    payload["github_sync"] = github_sync
+    payload["label"] = str(entry["label"])
+    payload["file_key"] = "majors"
+    payload["repo_backed"] = _is_repo_backed_entry(entry)
+    return payload
 
 
 @app.get("/get_orgs")
 def get_orgs(_session: AuthSession = Depends(_require_auth(require_dev=True))) -> Dict[str, Any]:
     _audit_dev_action("get_orgs", _session)
-    return _read_text_file(ORGS_PATH)
+    return _dev_file_payload_for_key("ncsu_orgs", prefer_remote=True)
 
 
 @app.post("/save_orgs")
@@ -2182,13 +2289,17 @@ def save_orgs(
     _session: AuthSession = Depends(_require_auth(require_dev=True)),
 ) -> Dict[str, Any]:
     _audit_dev_action("save_orgs", _session)
-    return _write_text_file(ORGS_PATH, request.text)
+    return _save_dev_file_text(
+        file_key="ncsu_orgs",
+        text=request.text,
+        actor=_session.username,
+    )
 
 
 @app.get("/get_concentrations")
 def get_concentrations(_session: AuthSession = Depends(_require_auth(require_dev=True))) -> Dict[str, Any]:
     _audit_dev_action("get_concentrations", _session)
-    return _read_text_file(CONCENTRATIONS_PATH)
+    return _dev_file_payload_for_key("concentrations", prefer_remote=True)
 
 
 @app.post("/save_concentrations")
@@ -2197,7 +2308,11 @@ def save_concentrations(
     _session: AuthSession = Depends(_require_auth(require_dev=True)),
 ) -> Dict[str, Any]:
     _audit_dev_action("save_concentrations", _session)
-    return _write_text_file(CONCENTRATIONS_PATH, request.text)
+    return _save_dev_file_text(
+        file_key="concentrations",
+        text=request.text,
+        actor=_session.username,
+    )
 
 
 @app.post("/export_assignments")

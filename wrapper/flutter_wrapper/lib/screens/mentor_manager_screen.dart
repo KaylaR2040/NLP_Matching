@@ -374,7 +374,7 @@ class _MentorManagerScreenState extends State<MentorManagerScreen> {
     final picked = await FilePicker.platform.pickFiles(
       withData: true,
       type: FileType.custom,
-      allowedExtensions: const ['csv'],
+      allowedExtensions: const ['csv', 'xlsx', 'xls'],
     );
     if (picked == null ||
         picked.files.isEmpty ||
@@ -390,11 +390,16 @@ class _MentorManagerScreenState extends State<MentorManagerScreen> {
     try {
       final response = await widget.apiClient.importMentorsCsv(
         file: selected,
-        sourceCsvPath: 'nlp_project/data/mentor_real.csv',
+        sourceCsvPath: selected.filename,
       );
       final report = MentorImportReport.fromJson(response);
+      final duplicateCount = report.skippedDuplicates;
+      final invalidCount = report.invalid;
+      final summary =
+          'Import complete: added ${report.added}, duplicates $duplicateCount, invalid $invalidCount, errors ${report.errors}.';
+      setState(() => _status = summary);
       _showSnack(
-        'Import complete: created ${report.created}, updated ${report.updated}, unchanged ${report.unchanged}, skipped ${report.skipped}, errors ${report.errors}.',
+        summary,
       );
       await _loadMentors();
     } on ApiUnauthorizedException {
@@ -405,6 +410,31 @@ class _MentorManagerScreenState extends State<MentorManagerScreen> {
       Navigator.of(context).pop();
     } catch (e) {
       _showSnack('Import failed: $e', isError: true);
+    }
+  }
+
+  Future<void> _exportCsv() async {
+    try {
+      final bytes =
+          await widget.apiClient.exportMentorsCsv(includeInactive: true);
+      final blob = html.Blob([bytes]);
+      final url = html.Url.createObjectUrlFromBlob(blob);
+      final anchor = html.AnchorElement(href: url)
+        ..download = 'mentor_manager_export.csv'
+        ..style.display = 'none';
+      html.document.body?.children.add(anchor);
+      anchor.click();
+      anchor.remove();
+      html.Url.revokeObjectUrl(url);
+      _showSnack('Exported mentor_manager_export.csv');
+    } on ApiUnauthorizedException {
+      if (!mounted) {
+        return;
+      }
+      widget.onAuthExpired();
+      Navigator.of(context).pop();
+    } catch (e) {
+      _showSnack('CSV export failed: $e', isError: true);
     }
   }
 
@@ -430,23 +460,6 @@ class _MentorManagerScreenState extends State<MentorManagerScreen> {
       Navigator.of(context).pop();
     } catch (e) {
       _showSnack('XLSX export failed: $e', isError: true);
-    }
-  }
-
-  Future<void> _syncToCanonicalCsv() async {
-    try {
-      final response = await widget.apiClient.syncMentorsToDefaultCsv();
-      _showSnack(
-        'Synced ${response['rows']} mentors to ${response['output_path']}.',
-      );
-    } on ApiUnauthorizedException {
-      if (!mounted) {
-        return;
-      }
-      widget.onAuthExpired();
-      Navigator.of(context).pop();
-    } catch (e) {
-      _showSnack('Sync failed: $e', isError: true);
     }
   }
 
@@ -950,8 +963,8 @@ class _MentorManagerScreenState extends State<MentorManagerScreen> {
                                 ? const SizedBox(
                                     width: 14,
                                     height: 14,
-                                    child:
-                                        CircularProgressIndicator(strokeWidth: 2),
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
                                   )
                                 : const Icon(Icons.auto_awesome_outlined,
                                     size: 16),
@@ -1083,7 +1096,14 @@ class _MentorManagerScreenState extends State<MentorManagerScreen> {
                                     ? null
                                     : _importCsv,
                                 icon: const Icon(Icons.upload_file),
-                                label: const Text('Import CSV'),
+                                label: const Text('Import CSV/XLSX'),
+                              ),
+                              OutlinedButton.icon(
+                                onPressed: (_loading || _bulkLinkedInUpdating)
+                                    ? null
+                                    : _exportCsv,
+                                icon: const Icon(Icons.description_outlined),
+                                label: const Text('Export CSV'),
                               ),
                               OutlinedButton.icon(
                                 onPressed: (_loading || _bulkLinkedInUpdating)
@@ -1091,13 +1111,6 @@ class _MentorManagerScreenState extends State<MentorManagerScreen> {
                                     : _exportXlsx,
                                 icon: const Icon(Icons.download),
                                 label: const Text('Export XLSX'),
-                              ),
-                              OutlinedButton.icon(
-                                onPressed: (_loading || _bulkLinkedInUpdating)
-                                    ? null
-                                    : _syncToCanonicalCsv,
-                                icon: const Icon(Icons.sync),
-                                label: const Text('Sync To mentor_real.csv'),
                               ),
                               if (_loadingLinkedInConfig)
                                 const Chip(
@@ -1124,7 +1137,8 @@ class _MentorManagerScreenState extends State<MentorManagerScreen> {
                                 )
                               else
                                 Chip(
-                                  avatar: const Icon(Icons.verified_outlined, size: 16),
+                                  avatar: const Icon(Icons.verified_outlined,
+                                      size: 16),
                                   label: Text(
                                     'LinkedIn provider: ${_linkedInConfig.provider}',
                                   ),
@@ -1462,7 +1476,7 @@ class _MentorEditorDialogState extends State<_MentorEditorDialog> {
       isActive: _isActive,
       sourceCsvPath: existing?.sourceCsvPath.isNotEmpty == true
           ? existing!.sourceCsvPath
-          : 'nlp_project/data/mentor_real.csv',
+          : 'mentor_manager',
       sourceTimestamp: existing?.sourceTimestamp ?? '',
       lastModifiedAt: existing?.lastModifiedAt ?? '',
       lastModifiedBy: existing?.lastModifiedBy ?? '',

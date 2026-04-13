@@ -233,7 +233,11 @@ String _extractLinkedInUrl(
 }
 
 String _normalizeHeader(String value) {
-  return value.trim().toLowerCase().replaceAll('_', ' ').replaceAll(RegExp(r'\s+'), ' ');
+  return value
+      .trim()
+      .toLowerCase()
+      .replaceAll('_', ' ')
+      .replaceAll(RegExp(r'\s+'), ' ');
 }
 
 class MentorsListResult {
@@ -260,32 +264,44 @@ class MentorsListResult {
 
 class MentorImportReport {
   final int rowsRead;
-  final int created;
-  final int updated;
-  final int unchanged;
-  final int skipped;
+  final int added;
+  final int skippedDuplicates;
+  final int invalid;
   final int errors;
+  final List<Map<String, dynamic>> duplicateRows;
+  final List<Map<String, dynamic>> invalidRows;
   final List<Map<String, dynamic>> errorRows;
 
   const MentorImportReport({
     required this.rowsRead,
-    required this.created,
-    required this.updated,
-    required this.unchanged,
-    required this.skipped,
+    required this.added,
+    required this.skippedDuplicates,
+    required this.invalid,
     required this.errors,
+    required this.duplicateRows,
+    required this.invalidRows,
     required this.errorRows,
   });
 
   factory MentorImportReport.fromJson(Map<String, dynamic> json) {
     final rawErrors = (json['error_rows'] as List? ?? const []);
+    final rawDuplicates = (json['duplicate_rows'] as List? ?? const []);
+    final rawInvalid = (json['invalid_rows'] as List? ?? const []);
     return MentorImportReport(
       rowsRead: int.tryParse('${json['rows_read'] ?? 0}') ?? 0,
-      created: int.tryParse('${json['created'] ?? 0}') ?? 0,
-      updated: int.tryParse('${json['updated'] ?? 0}') ?? 0,
-      unchanged: int.tryParse('${json['unchanged'] ?? 0}') ?? 0,
-      skipped: int.tryParse('${json['skipped'] ?? 0}') ?? 0,
+      added: int.tryParse('${json['added'] ?? 0}') ?? 0,
+      skippedDuplicates:
+          int.tryParse('${json['skipped_duplicates'] ?? 0}') ?? 0,
+      invalid: int.tryParse('${json['invalid'] ?? 0}') ?? 0,
       errors: int.tryParse('${json['errors'] ?? 0}') ?? 0,
+      duplicateRows: rawDuplicates
+          .whereType<Map<String, dynamic>>()
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList(),
+      invalidRows: rawInvalid
+          .whereType<Map<String, dynamic>>()
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList(),
       errorRows: rawErrors
           .whereType<Map<String, dynamic>>()
           .map((row) => Map<String, dynamic>.from(row))

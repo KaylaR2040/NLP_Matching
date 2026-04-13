@@ -28,8 +28,8 @@ This is the UI shell for operations around `nlp_project/main.py`.
   - Card view with photo/avatar fallback and LinkedIn link button
 - Mentor manager (dev-only):
   - Add/edit/deactivate mentors with backend persistence
-  - CSV import + XLSX export for `mentor_real.csv` workflow compatibility
-  - Sync current mentor data back to canonical backend CSV path
+  - CSV/XLSX import into backend-managed mentor storage
+  - CSV + XLSX export of current mentor data on demand
   - Per-row + in-editor "Update from LinkedIn" actions via backend endpoint
   - Displays last LinkedIn sync timestamp and profile photo fallback
   - Unsaved-change prompts trigger only on real value changes (not focus)

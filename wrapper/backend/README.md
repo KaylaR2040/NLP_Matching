@@ -55,21 +55,22 @@ This service is the bridge between Flutter Web and the existing Python matcher a
 
 - `POST /mentors/import-csv` (multipart form)
   - Requires dev role bearer token.
-  - Accepts `mentor_real.csv`-style uploads.
-  - Upserts by email first, then fallback identity matching.
-  - Returns import summary counts (`created`, `updated`, `unchanged`, `skipped`, `errors`).
+  - Accepts `.csv`, `.xlsx`, and `.xls` mentor spreadsheet uploads.
+  - Appends mentors into backend-managed storage.
+  - Skips duplicates by normalized email, then normalized full name only when email is missing.
+  - Returns import summary counts (`rows_read`, `added`, `skipped_duplicates`, `invalid`, `errors`) plus row-level duplicate/invalid details.
 
 - `GET /mentors/export-csv`
   - Requires bearer token.
-  - Exports mentor data in a `mentor_real.csv`-compatible structure.
+  - Exports the current backend mentor dataset as CSV.
 
 - `GET /mentors/export-xlsx`
   - Requires bearer token.
-  - Exports mentor data as `.xlsx` using the same mentor export schema.
+  - Exports the current backend mentor dataset as `.xlsx`.
 
 - `POST /mentors/sync-to-default-csv`
   - Requires dev role bearer token.
-  - Writes current mentor export back to canonical backend CSV path.
+  - Deprecated; returns `410` because mentor data is application data, not a repo-backed CSV.
 
 - `POST /mentors/{mentor_id}/enrich-linkedin`
   - Requires dev role bearer token.
@@ -165,25 +166,22 @@ python -c "from api.index import app; print(app.title)"
 
 ## Mentor storage
 
-- Default persistent mentor store:
-  - `data/mentors/mentors_store.json`
-- Backup snapshots:
-  - `data/mentors/backups/`
-- Canonical CSV path used for sync/export compatibility:
-  - `data/mentor_real.csv` (or `WRAPPER_MENTOR_SOURCE_CSV_PATH` override)
+- Mentor application data is isolated behind `app/mentor_store.py`.
+- Supported storage modes:
+  - `postgres`: production-safe durable storage for mentor records
+  - `file`: local/dev fallback only
+- Vercel deployments require `postgres`; the backend will refuse silent file fallback in production.
+- Backend CSV/XLSX exports are generated on demand from the current mentor store.
+- `WRAPPER_MENTOR_SOURCE_CSV_PATH` is optional provenance/fallback data only; it is not the source of truth for mentor records.
 
-## Persistence limitation and migration path
+## Repo-backed editable files
 
-- Current mentor persistence is file-backed for MVP.
-- In serverless/ephemeral deployments, local file writes may not be durable across instances.
-- All mentor reads/writes are isolated behind `app/mentor_store.py` so you can later replace it with:
-  - a relational DB (Postgres/MySQL),
-  - a managed document store,
-  - or shared object storage + metadata DB.
-- Migration path:
-  1. Keep API contracts unchanged.
-  2. Replace `MentorStore` implementation with a DB-backed repository.
-  3. Run one-time import from `mentors_store.json` / `mentor_real.csv`.
+- Matching/config files such as `concentrations.txt`, `ncsu_orgs.txt`, and `majors.txt` remain separate from mentor data.
+- On Vercel, repo-backed files should use GitHub sync for durable edits.
+- Dev-file responses expose:
+  - `content_source`: `github`, `repo_bundle`, `runtime_override`, or `local_file`
+  - `durable_source`: `github`, `local_only`, `runtime_only`, or `not_configured`
+- If GitHub sync is not configured in production, writes fail explicitly instead of pretending local edits are durable.
 
 ## Secrets and environment
 
@@ -206,9 +204,11 @@ python -c "from api.index import app; print(app.title)"
   - `WRAPPER_BACKEND_ENV_PATH`
   - `WRAPPER_NLP_PROJECT_DIR`
   - `WRAPPER_DEV_RUNTIME_EDIT_DIR` (defaults to `/tmp/nlp_matching_runtime/dev_files`)
+  - `WRAPPER_MENTOR_STORAGE_MODE` (`postgres` or `file`)
+  - `WRAPPER_MENTOR_DATABASE_URL` (falls back to `DATABASE_URL`)
   - `WRAPPER_MENTOR_STORE_PATH`
   - `WRAPPER_MENTOR_BACKUP_DIR`
-  - `WRAPPER_MENTOR_SOURCE_CSV_PATH`
+  - `WRAPPER_MENTOR_SOURCE_CSV_PATH` (optional local snapshot / fallback lookup path only)
   - `WRAPPER_MATCHING_STATE_PATH`
 - Optional GitHub persistence for dev-file edits:
   - `WRAPPER_GITHUB_SYNC_ENABLED`
@@ -248,3 +248,4 @@ python -c "from api.index import app; print(app.title)"
 - `run_match` requires `nlp_project/main.py`; if not bundled in deployment, set `WRAPPER_NLP_PROJECT_DIR` to an available path or disable matching endpoints.
 - Dev file editor now includes discoverable text/code files under `nlp_project`, `wrapper/backend/app`, and `wrapper/backend/scripts` (markdown excluded).
 - File-backed data paths (`data/...`) are not durable in serverless. Use external storage/DB for production persistence.
+- Mentor records should use Postgres in production. Repo-backed editable files should use GitHub sync for durable edits.

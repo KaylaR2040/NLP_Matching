@@ -462,21 +462,6 @@ class ApiClient {
     return response.bodyBytes;
   }
 
-  Future<Map<String, dynamic>> syncMentorsToDefaultCsv(
-      {bool includeInactive = true}) async {
-    final uri = _uri(
-      '/mentors/sync-to-default-csv',
-      queryParameters: {'include_inactive': includeInactive ? 'true' : 'false'},
-    );
-    final response = await _request(
-      method: 'POST',
-      uri: uri,
-      operation: 'sync mentors to default csv',
-      body: '{}',
-    );
-    return _decodeBody(response);
-  }
-
   Future<Map<String, dynamic>> enqueueMentorLinkedInEnrichment(
       String mentorId) async {
     final uri = _uri('/mentors/$mentorId/enrich-linkedin');

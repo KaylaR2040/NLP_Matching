@@ -28,7 +28,7 @@ class _DevFileMeta {
       path: (json['path'] ?? '').toString(),
       lineCount: int.tryParse('${json['line_count'] ?? 0}') ?? 0,
       hasUpdateScript: json['has_update_script'] == true,
-      durableSource: (json['durable_source'] ?? 'local_filesystem').toString(),
+      durableSource: (json['durable_source'] ?? 'local_only').toString(),
     );
   }
 }
@@ -126,10 +126,13 @@ class _DevDashboardScreenState extends State<DevDashboardScreen> {
     if (contentSource == 'runtime_override') {
       return 'Loaded runtime override copy.';
     }
+    if (contentSource == 'local_file') {
+      return 'Loaded local file copy.';
+    }
     if (durableSource == 'github') {
       return 'Loaded bundled copy. Durable source is GitHub.';
     }
-    return 'Loaded bundled file.';
+    return 'Loaded repo bundle copy.';
   }
 
   String _describeSaveResult(Map<String, dynamic> response, String label) {
@@ -156,9 +159,11 @@ class _DevDashboardScreenState extends State<DevDashboardScreen> {
     switch (durableSource) {
       case 'github':
         return 'Durable source: GitHub';
-      case 'local_filesystem':
-        return 'Durable source: local filesystem';
-      case 'none':
+      case 'local_only':
+        return 'Durable source: local only';
+      case 'runtime_only':
+        return 'Durable source: runtime only';
+      case 'not_configured':
         return 'Durable source: not configured';
       default:
         return 'Durable source: $durableSource';
