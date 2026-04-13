@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'constants/api_runtime_config.dart';
+import 'constants/app_navigation.dart';
 import 'constants/ncsu_theme.dart';
 import 'screens/login_screen.dart';
 import 'screens/matching_dashboard_screen.dart';
@@ -137,6 +138,7 @@ class _WrapperAppState extends State<WrapperApp> {
       title: 'NLP Mentor Matcher Wrapper',
       debugShowCheckedModeBanner: false,
       theme: NCSUTheme.light,
+      navigatorObservers: [routeObserver],
       home: _bootstrapping
           ? const Scaffold(body: Center(child: CircularProgressIndicator()))
           : _isDev == null

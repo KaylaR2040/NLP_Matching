@@ -476,15 +476,18 @@ class MentorStoreCommon:
         summary: Dict[str, Any] = {
             "rows_read": len(rows),
             "added": 0,
+            "reactivated": 0,
             "skipped_duplicates": 0,
             "invalid": 0,
             "errors": 0,
+            "reactivated_rows": [],
             "duplicate_rows": [],
             "invalid_rows": [],
             "error_rows": [],
         }
 
         records_to_add: List[Dict[str, Any]] = []
+        records_to_reactivate: List[Dict[str, Any]] = []
         for parsed in rows:
             try:
                 incoming = self._record_from_csv_row(
@@ -501,10 +504,39 @@ class MentorStoreCommon:
 
                 duplicate = self._find_duplicate_record(known_records, incoming)
                 if duplicate is not None:
-                    summary["skipped_duplicates"] += 1
-                    summary["duplicate_rows"].append(
-                        self._duplicate_row_detail(parsed.row_index, duplicate)
-                    )
+                    matched = duplicate.get("matched_record", {}) if isinstance(duplicate, dict) else {}
+                    if not matched.get("is_active", True):
+                        # Previously soft-deleted record: reactivate it and merge in fresh CSV data.
+                        now_iso = _now_iso()
+                        merged = {**matched}
+                        for key, value in incoming.items():
+                            # Only overwrite fields that the incoming CSV has real values for.
+                            if value not in (None, "", [], {}):
+                                merged[key] = value
+                        merged["is_active"] = True
+                        merged["last_modified_at"] = now_iso
+                        merged["last_modified_by"] = actor
+                        normalized = self._normalize_record(merged)
+                        records_to_reactivate.append(normalized)
+                        # Keep known_records consistent so later rows don't double-match.
+                        for idx, rec in enumerate(known_records):
+                            if _stringify(rec.get("mentor_id")) == _stringify(matched.get("mentor_id")):
+                                known_records[idx] = copy.deepcopy(normalized)
+                                break
+                        summary["reactivated"] += 1
+                        summary["reactivated_rows"].append(
+                            {
+                                "row_index": parsed.row_index,
+                                "mentor_id": _stringify(matched.get("mentor_id")),
+                                "email": _stringify(matched.get("email")),
+                                "name": _stringify(matched.get("full_name")),
+                            }
+                        )
+                    else:
+                        summary["skipped_duplicates"] += 1
+                        summary["duplicate_rows"].append(
+                            self._duplicate_row_detail(parsed.row_index, duplicate)
+                        )
                     continue
 
                 if not incoming.get("mentor_id"):
@@ -524,8 +556,11 @@ class MentorStoreCommon:
                     {"row_index": parsed.row_index, "error": str(exc)}
                 )
 
-        if records_to_add and not dry_run:
-            self._insert_many(records_to_add)
+        if not dry_run:
+            if records_to_add:
+                self._insert_many(records_to_add)
+            for record in records_to_reactivate:
+                self._update_record(record)
 
         return summary
 

@@ -3,6 +3,7 @@ import 'dart:html' as html;
 
 import 'package:flutter/material.dart';
 
+import '../constants/app_navigation.dart';
 import '../models/mentor_models.dart';
 import '../services/api_client.dart';
 
@@ -20,7 +21,8 @@ class MentorsDirectoryScreen extends StatefulWidget {
   State<MentorsDirectoryScreen> createState() => _MentorsDirectoryScreenState();
 }
 
-class _MentorsDirectoryScreenState extends State<MentorsDirectoryScreen> {
+class _MentorsDirectoryScreenState extends State<MentorsDirectoryScreen>
+    with RouteAware {
   final TextEditingController _queryController = TextEditingController();
   final TextEditingController _companyController = TextEditingController();
   final TextEditingController _locationController = TextEditingController();
@@ -40,7 +42,24 @@ class _MentorsDirectoryScreenState extends State<MentorsDirectoryScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route != null) {
+      routeObserver.subscribe(this, route);
+    }
+  }
+
+  /// Called when a route was popped and this screen is now visible again.
+  /// Re-fetches mentors so changes made in Mentor Manager are reflected.
+  @override
+  void didPopNext() {
+    _loadMentors();
+  }
+
+  @override
   void dispose() {
+    routeObserver.unsubscribe(this);
     _queryController.dispose();
     _companyController.dispose();
     _locationController.dispose();

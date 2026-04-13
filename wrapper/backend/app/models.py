@@ -152,9 +152,11 @@ class MentorsListResponse(BaseModel):
 class MentorImportResponse(BaseModel):
     rows_read: int
     added: int
+    reactivated: int = 0
     skipped_duplicates: int
     invalid: int
     errors: int
+    reactivated_rows: List[Dict[str, Any]] = Field(default_factory=list)
     duplicate_rows: List[Dict[str, Any]] = Field(default_factory=list)
     invalid_rows: List[Dict[str, Any]] = Field(default_factory=list)
     error_rows: List[Dict[str, Any]] = Field(default_factory=list)
@@ -195,9 +197,11 @@ class MentorStoreMigrationResponse(BaseModel):
     source_path: str
     rows_read: int
     added: int
+    reactivated: int = 0
     skipped_duplicates: int
     invalid: int
     errors: int
+    reactivated_rows: List[Dict[str, Any]] = Field(default_factory=list)
     duplicate_rows: List[Dict[str, Any]] = Field(default_factory=list)
     invalid_rows: List[Dict[str, Any]] = Field(default_factory=list)
     error_rows: List[Dict[str, Any]] = Field(default_factory=list)

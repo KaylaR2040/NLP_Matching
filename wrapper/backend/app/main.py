@@ -139,6 +139,9 @@ else:
     logging.getLogger().setLevel(LOG_LEVEL)
 
 TOKEN_TTL_SECONDS = int(os.getenv("WRAPPER_TOKEN_TTL_SECONDS", "3600"))
+# Vercel free-tier serverless limit is 60s; use 50s to leave a safety margin.
+# Increase (e.g. 270) when deploying on a platform with a longer timeout.
+MATCH_TIMEOUT_SECONDS = int(os.getenv("WRAPPER_MATCH_TIMEOUT_SECONDS", "50"))
 MAX_SESSIONS_PER_USER = int(os.getenv("WRAPPER_MAX_SESSIONS_PER_USER", "5"))
 REQUIRE_HTTPS = os.getenv("WRAPPER_REQUIRE_HTTPS", "false").strip().lower() in {
     "1",
@@ -2023,7 +2026,26 @@ async def run_match(
             "run",
         ]
 
-        completed = subprocess.run(cmd, cwd=str(runtime_nlp_dir), capture_output=True, text=True)
+        try:
+            completed = subprocess.run(
+                cmd,
+                cwd=str(runtime_nlp_dir),
+                capture_output=True,
+                text=True,
+                timeout=MATCH_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired:
+            raise HTTPException(
+                status_code=504,
+                detail={
+                    "message": (
+                        f"Matching engine timed out after {MATCH_TIMEOUT_SECONDS}s. "
+                        "For large datasets, run locally or set WRAPPER_MATCH_TIMEOUT_SECONDS "
+                        "to a higher value (Vercel Pro allows up to 300s)."
+                    ),
+                    "timeout_seconds": MATCH_TIMEOUT_SECONDS,
+                },
+            )
         if completed.returncode != 0:
             raise HTTPException(
                 status_code=500,

@@ -265,7 +265,9 @@ class _MentorManagerScreenState extends State<MentorManagerScreen> {
       builder: (context) {
         return AlertDialog(
           title: const Text('Deactivate Mentor'),
-          content: Text('Deactivate ${mentor.fullName}?'),
+          content: Text(
+            'Deactivate ${mentor.fullName}?\n\nThe record will be hidden from active lists but can be restored later or re-imported from CSV.',
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
@@ -286,7 +288,7 @@ class _MentorManagerScreenState extends State<MentorManagerScreen> {
 
     try {
       await widget.apiClient.deactivateMentor(mentor.mentorId);
-      _showSnack('Mentor deactivated.');
+      _showSnack('${mentor.fullName} deactivated. Re-import their CSV row to restore them.');
       await _loadMentors();
     } on ApiUnauthorizedException {
       if (!mounted) {
@@ -296,6 +298,25 @@ class _MentorManagerScreenState extends State<MentorManagerScreen> {
       Navigator.of(context).pop();
     } catch (e) {
       _showSnack('Deactivate failed: $e', isError: true);
+    }
+  }
+
+  Future<void> _restoreMentor(MentorRecord mentor) async {
+    try {
+      await widget.apiClient.updateMentor(
+        mentorId: mentor.mentorId,
+        payload: {'is_active': true},
+      );
+      _showSnack('${mentor.fullName} restored.');
+      await _loadMentors();
+    } on ApiUnauthorizedException {
+      if (!mounted) {
+        return;
+      }
+      widget.onAuthExpired();
+      Navigator.of(context).pop();
+    } catch (e) {
+      _showSnack('Restore failed: $e', isError: true);
     }
   }
 
@@ -393,14 +414,14 @@ class _MentorManagerScreenState extends State<MentorManagerScreen> {
         sourceCsvPath: selected.filename,
       );
       final report = MentorImportReport.fromJson(response);
-      final duplicateCount = report.skippedDuplicates;
-      final invalidCount = report.invalid;
-      final summary =
-          'Import complete: added ${report.added}, duplicates $duplicateCount, invalid $invalidCount, errors ${report.errors}.';
+      final parts = <String>['Added: ${report.added}'];
+      if (report.reactivated > 0) parts.add('Restored: ${report.reactivated}');
+      if (report.skippedDuplicates > 0) parts.add('Duplicates skipped: ${report.skippedDuplicates}');
+      if (report.invalid > 0) parts.add('Invalid: ${report.invalid}');
+      if (report.errors > 0) parts.add('Errors: ${report.errors}');
+      final summary = 'Import complete — ${parts.join(' | ')}';
       setState(() => _status = summary);
-      _showSnack(
-        summary,
-      );
+      _showSnack(summary);
       await _loadMentors();
     } on ApiUnauthorizedException {
       if (!mounted) {
@@ -980,13 +1001,27 @@ class _MentorManagerScreenState extends State<MentorManagerScreen> {
                           icon: const Icon(Icons.edit_outlined, size: 16),
                           label: const Text('Edit'),
                         ),
-                        TextButton.icon(
-                          onPressed: (_loading || _bulkLinkedInUpdating)
-                              ? null
-                              : () => _deactivateMentor(mentor),
-                          icon: const Icon(Icons.person_off_outlined, size: 16),
-                          label: const Text('Deactivate'),
-                        ),
+                        if (mentor.isActive)
+                          TextButton.icon(
+                            onPressed: (_loading || _bulkLinkedInUpdating)
+                                ? null
+                                : () => _deactivateMentor(mentor),
+                            icon: const Icon(Icons.person_off_outlined,
+                                size: 16),
+                            label: const Text('Deactivate'),
+                          )
+                        else
+                          TextButton.icon(
+                            onPressed: (_loading || _bulkLinkedInUpdating)
+                                ? null
+                                : () => _restoreMentor(mentor),
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.green.shade700,
+                            ),
+                            icon: const Icon(Icons.person_add_outlined,
+                                size: 16),
+                            label: const Text('Restore'),
+                          ),
                       ],
                     ),
                   ],

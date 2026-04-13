@@ -265,9 +265,11 @@ class MentorsListResult {
 class MentorImportReport {
   final int rowsRead;
   final int added;
+  final int reactivated;
   final int skippedDuplicates;
   final int invalid;
   final int errors;
+  final List<Map<String, dynamic>> reactivatedRows;
   final List<Map<String, dynamic>> duplicateRows;
   final List<Map<String, dynamic>> invalidRows;
   final List<Map<String, dynamic>> errorRows;
@@ -275,9 +277,11 @@ class MentorImportReport {
   const MentorImportReport({
     required this.rowsRead,
     required this.added,
+    required this.reactivated,
     required this.skippedDuplicates,
     required this.invalid,
     required this.errors,
+    required this.reactivatedRows,
     required this.duplicateRows,
     required this.invalidRows,
     required this.errorRows,
@@ -287,13 +291,19 @@ class MentorImportReport {
     final rawErrors = (json['error_rows'] as List? ?? const []);
     final rawDuplicates = (json['duplicate_rows'] as List? ?? const []);
     final rawInvalid = (json['invalid_rows'] as List? ?? const []);
+    final rawReactivated = (json['reactivated_rows'] as List? ?? const []);
     return MentorImportReport(
       rowsRead: int.tryParse('${json['rows_read'] ?? 0}') ?? 0,
       added: int.tryParse('${json['added'] ?? 0}') ?? 0,
+      reactivated: int.tryParse('${json['reactivated'] ?? 0}') ?? 0,
       skippedDuplicates:
           int.tryParse('${json['skipped_duplicates'] ?? 0}') ?? 0,
       invalid: int.tryParse('${json['invalid'] ?? 0}') ?? 0,
       errors: int.tryParse('${json['errors'] ?? 0}') ?? 0,
+      reactivatedRows: rawReactivated
+          .whereType<Map<String, dynamic>>()
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList(),
       duplicateRows: rawDuplicates
           .whereType<Map<String, dynamic>>()
           .map((row) => Map<String, dynamic>.from(row))
