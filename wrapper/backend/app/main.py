@@ -54,20 +54,71 @@ from .linkedin_enrichment import (
 from .mentor_store import DEFAULT_MENTOR_BACKUP_DIR, DEFAULT_MENTOR_STORE_PATH, MentorStore
 
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-NLP_PROJECT_DIR = REPO_ROOT / "nlp_project"
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+
+_repo_candidate = BACKEND_ROOT
+if (BACKEND_ROOT.parent.parent / "nlp_project").exists():
+    _repo_candidate = BACKEND_ROOT.parent.parent
+elif (BACKEND_ROOT.parent / "nlp_project").exists():
+    _repo_candidate = BACKEND_ROOT.parent
+REPO_ROOT = _repo_candidate
+
+def _resolve_from_backend(path_value: str) -> Path:
+    path = Path(path_value).expanduser()
+    if not path.is_absolute():
+        path = BACKEND_ROOT / path
+    return path.resolve()
+
+NLP_PROJECT_DIR = Path(
+    os.getenv("WRAPPER_NLP_PROJECT_DIR", str(REPO_ROOT / "nlp_project"))
+)
+NLP_PROJECT_DIR = _resolve_from_backend(str(NLP_PROJECT_DIR))
 NLP_MAIN_PATH = NLP_PROJECT_DIR / "main.py"
-DATA_DIR = REPO_ROOT / "data"
-ORGS_PATH = DATA_DIR / "ncsu_orgs.txt"
-CONCENTRATIONS_PATH = DATA_DIR / "concentrations.txt"
-GRAD_PROGRAMS_PATH = DATA_DIR / "grad_programs.txt"
-ABM_PROGRAMS_PATH = DATA_DIR / "abm_programs.txt"
-PHD_PROGRAMS_PATH = DATA_DIR / "phd_programs.txt"
+
+_default_data_dir = REPO_ROOT / "data"
+if not _default_data_dir.exists():
+    _default_data_dir = BACKEND_ROOT / "data"
+
+DATA_DIR = _resolve_from_backend(os.getenv("WRAPPER_DATA_DIR", str(_default_data_dir)))
+ORGS_PATH = _resolve_from_backend(os.getenv("WRAPPER_ORGS_PATH", str(DATA_DIR / "ncsu_orgs.txt")))
+CONCENTRATIONS_PATH = Path(
+    os.getenv("WRAPPER_CONCENTRATIONS_PATH", str(DATA_DIR / "concentrations.txt"))
+)
+CONCENTRATIONS_PATH = _resolve_from_backend(str(CONCENTRATIONS_PATH))
+GRAD_PROGRAMS_PATH = Path(
+    os.getenv("WRAPPER_GRAD_PROGRAMS_PATH", str(DATA_DIR / "grad_programs.txt"))
+)
+GRAD_PROGRAMS_PATH = _resolve_from_backend(str(GRAD_PROGRAMS_PATH))
+ABM_PROGRAMS_PATH = Path(
+    os.getenv("WRAPPER_ABM_PROGRAMS_PATH", str(DATA_DIR / "abm_programs.txt"))
+)
+ABM_PROGRAMS_PATH = _resolve_from_backend(str(ABM_PROGRAMS_PATH))
+PHD_PROGRAMS_PATH = Path(
+    os.getenv("WRAPPER_PHD_PROGRAMS_PATH", str(DATA_DIR / "phd_programs.txt"))
+)
+PHD_PROGRAMS_PATH = _resolve_from_backend(str(PHD_PROGRAMS_PATH))
 DEFAULT_MAJORS_PATH = GRAD_PROGRAMS_PATH
-DEV_BACKUP_DIR = REPO_ROOT / "wrapper" / "backend" / "data" / "dev_file_backups"
-BACKEND_ENV_PATH = REPO_ROOT / "wrapper" / "backend" / ".env"
-DEFAULT_MENTOR_SOURCE_CSV = REPO_ROOT / "nlp_project" / "data" / "mentor_real.csv"
-DEFAULT_MATCHING_STATE_PATH = REPO_ROOT / "nlp_project" / "state" / "matching_state.json"
+DEV_BACKUP_DIR = Path(
+    os.getenv(
+        "WRAPPER_DEV_BACKUP_DIR",
+        str(BACKEND_ROOT / "data" / "dev_file_backups"),
+    )
+)
+DEV_BACKUP_DIR = _resolve_from_backend(str(DEV_BACKUP_DIR))
+BACKEND_ENV_PATH = Path(
+    os.getenv("WRAPPER_BACKEND_ENV_PATH", str(BACKEND_ROOT / ".env"))
+)
+BACKEND_ENV_PATH = _resolve_from_backend(str(BACKEND_ENV_PATH))
+
+_default_mentor_source_csv = NLP_PROJECT_DIR / "data" / "mentor_real.csv"
+if not _default_mentor_source_csv.exists():
+    _default_mentor_source_csv = BACKEND_ROOT / "data" / "mentor_real.csv"
+DEFAULT_MENTOR_SOURCE_CSV = _default_mentor_source_csv
+
+_default_matching_state = NLP_PROJECT_DIR / "state" / "matching_state.json"
+if not _default_matching_state.exists():
+    _default_matching_state = BACKEND_ROOT / "data" / "matching_state.json"
+DEFAULT_MATCHING_STATE_PATH = _default_matching_state
 
 load_dotenv(BACKEND_ENV_PATH)
 
@@ -87,16 +138,20 @@ LOGIN_LOCKOUT_SECONDS = int(os.getenv("WRAPPER_LOGIN_LOCKOUT_SECONDS", "600"))
 
 MENTOR_STORE_PATH = Path(
     os.getenv("WRAPPER_MENTOR_STORE_PATH", str(DEFAULT_MENTOR_STORE_PATH))
-).expanduser()
+)
+MENTOR_STORE_PATH = _resolve_from_backend(str(MENTOR_STORE_PATH))
 MENTOR_BACKUP_DIR = Path(
     os.getenv("WRAPPER_MENTOR_BACKUP_DIR", str(DEFAULT_MENTOR_BACKUP_DIR))
-).expanduser()
+)
+MENTOR_BACKUP_DIR = _resolve_from_backend(str(MENTOR_BACKUP_DIR))
 MENTOR_SOURCE_CSV_PATH = Path(
     os.getenv("WRAPPER_MENTOR_SOURCE_CSV_PATH", str(DEFAULT_MENTOR_SOURCE_CSV))
-).expanduser()
+)
+MENTOR_SOURCE_CSV_PATH = _resolve_from_backend(str(MENTOR_SOURCE_CSV_PATH))
 MATCHING_STATE_PATH = Path(
     os.getenv("WRAPPER_MATCHING_STATE_PATH", str(DEFAULT_MATCHING_STATE_PATH))
-).expanduser()
+)
+MATCHING_STATE_PATH = _resolve_from_backend(str(MATCHING_STATE_PATH))
 
 DEV_EDITABLE_FILES: Dict[str, Dict[str, Any]] = {
     "ncsu_orgs": {
@@ -513,6 +568,7 @@ def _load_payload(payload_json: str) -> RunMatchPayload:
 def _script_candidates(kind: str) -> List[Path]:
     if kind == "orgs":
         return [
+            BACKEND_ROOT / "scripts" / "pull_orgs.py",
             REPO_ROOT / "wrapper" / "backend" / "scripts" / "pull_orgs.py",
             REPO_ROOT / "data" / "pullorgs.py",
             REPO_ROOT / "data" / "update_ncsu_orgs.py",
@@ -520,6 +576,7 @@ def _script_candidates(kind: str) -> List[Path]:
         ]
     if kind == "concentrations":
         return [
+            BACKEND_ROOT / "scripts" / "pull_concentrations.py",
             REPO_ROOT / "wrapper" / "backend" / "scripts" / "pull_concentrations.py",
             REPO_ROOT / "data" / "pullconcentration.py",
             REPO_ROOT / "data" / "pullconcentrations.py",
@@ -903,7 +960,32 @@ def _extract_mentor_capacity_map(mentor_csv_path: Path) -> Dict[str, int]:
         return capacities
     except Exception as exc:
         LOG.warning("mentor_capacity_parse_failed path=%s error=%s", mentor_csv_path, exc)
-        return {}
+        # Fallback parser keeps manager-sourced capacities usable when nlp_project is unavailable.
+        capacities: Dict[str, int] = {}
+        try:
+            with mentor_csv_path.open("r", encoding="utf-8-sig", newline="") as handle:
+                reader = csv.DictReader(handle)
+                for row in reader:
+                    mentor_id = (
+                        str(row.get("Mentor ID", "")).strip()
+                        or str(row.get("Email", "")).strip()
+                    )
+                    if not mentor_id:
+                        continue
+                    raw_capacity = str(row.get("Students Interested", "1")).strip()
+                    try:
+                        capacity = max(1, int(raw_capacity or "1"))
+                    except (TypeError, ValueError):
+                        capacity = 1
+                    capacities[mentor_id] = capacity
+        except Exception as fallback_exc:
+            LOG.warning(
+                "mentor_capacity_fallback_failed path=%s error=%s",
+                mentor_csv_path,
+                fallback_exc,
+            )
+            return {}
+        return capacities
 
 
 def _attach_mentor_capacity_metadata(result: Dict[str, Any], capacities: Dict[str, int]) -> None:
@@ -1457,7 +1539,14 @@ async def run_match(
     payload = _load_payload(payload_json)
 
     if not NLP_MAIN_PATH.exists():
-        raise HTTPException(status_code=500, detail=f"Could not find nlp_project/main.py at {NLP_MAIN_PATH}")
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Matching runtime is not available in this deployment. "
+                f"Expected nlp_project/main.py at {NLP_MAIN_PATH}. "
+                "Deploy with nlp_project included or set WRAPPER_NLP_PROJECT_DIR."
+            ),
+        )
 
     with tempfile.TemporaryDirectory(prefix="matcher_wrapper_") as tmp:
         tmp_dir = Path(tmp)

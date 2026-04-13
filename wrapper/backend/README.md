@@ -27,7 +27,7 @@ This service is the bridge between Flutter Web and the existing Python matcher a
 
 - `POST /run_match` (multipart form)
   - Requires bearer token.
-  - Files: `mentee_file`, `mentor_file` (`.csv`, `.xlsx`, `.xls`)
+  - Files: `mentee_file` (required), `mentor_file` (optional; defaults to Mentor Manager store export)
   - Form field: `payload_json` (JSON string)
   - Runs `nlp_project/main.py ... run` and returns the parsed `latest_matches.json`.
   - Response includes mentor capacity metadata (`mentor_capacity`, `mentor_capacity` per row) so UI can show mentee limits.
@@ -150,14 +150,27 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
+Vercel production entrypoint (used by `vercel.json`):
+
+```python
+from app.main import app
+```
+
+Local import validation:
+
+```bash
+cd wrapper/backend
+python -c "from api.index import app; print(app.title)"
+```
+
 ## Mentor storage
 
 - Default persistent mentor store:
-  - `wrapper/backend/data/mentors/mentors_store.json`
+  - `data/mentors/mentors_store.json`
 - Backup snapshots:
-  - `wrapper/backend/data/mentors/backups/`
+  - `data/mentors/backups/`
 - Canonical CSV path used for sync/export compatibility:
-  - `nlp_project/data/mentor_real.csv`
+  - `data/mentor_real.csv` (or `WRAPPER_MENTOR_SOURCE_CSV_PATH` override)
 
 ## Persistence limitation and migration path
 
@@ -189,6 +202,9 @@ uvicorn app.main:app --reload --port 8000
 - Security audit events are logged for login success/failure, rate-limit blocks, token refresh/logout, and denied dev access attempts.
 - Enable `WRAPPER_REQUIRE_HTTPS=true` in deployment so non-local HTTP traffic is rejected.
 - Mentor storage/config env vars:
+  - `WRAPPER_DATA_DIR`
+  - `WRAPPER_BACKEND_ENV_PATH`
+  - `WRAPPER_NLP_PROJECT_DIR`
   - `WRAPPER_MENTOR_STORE_PATH`
   - `WRAPPER_MENTOR_BACKUP_DIR`
   - `WRAPPER_MENTOR_SOURCE_CSV_PATH`
@@ -208,3 +224,11 @@ uvicorn app.main:app --reload --port 8000
   - `WRAPPER_CONCENTRATIONS_HTTP_TIMEOUT_SECONDS`
   - `WRAPPER_CONCENTRATIONS_HTTP_MAX_ATTEMPTS`
   - `WRAPPER_CONCENTRATIONS_HTTP_BACKOFF_SECONDS`
+
+## Vercel deployment notes
+
+- Set Vercel Root Directory to `wrapper/backend`.
+- Keep `api/index.py` + `vercel.json` as committed.
+- Configure env vars from `.env.example` in Vercel project settings.
+- `run_match` requires `nlp_project/main.py`; if not bundled in deployment, set `WRAPPER_NLP_PROJECT_DIR` to an available path or disable matching endpoints.
+- File-backed data paths (`data/...`) are not durable in serverless. Use external storage/DB for production persistence.

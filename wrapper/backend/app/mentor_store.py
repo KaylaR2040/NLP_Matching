@@ -4,6 +4,7 @@ import copy
 import csv
 from io import StringIO
 import json
+import os
 import re
 import shutil
 import tempfile
@@ -14,9 +15,30 @@ from typing import Any, Dict, List, Optional
 from .linkedin_enrichment import normalize_linkedin_profile_url
 
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_MENTOR_STORE_PATH = REPO_ROOT / "wrapper" / "backend" / "data" / "mentors" / "mentors_store.json"
-DEFAULT_MENTOR_BACKUP_DIR = REPO_ROOT / "wrapper" / "backend" / "data" / "mentors" / "backups"
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _resolve_from_backend(path_value: str) -> Path:
+    path = Path(path_value).expanduser()
+    if not path.is_absolute():
+        path = BACKEND_ROOT / path
+    return path.resolve()
+
+
+DEFAULT_MENTOR_STORE_PATH = Path(
+    os.getenv(
+        "WRAPPER_MENTOR_STORE_PATH",
+        str(BACKEND_ROOT / "data" / "mentors" / "mentors_store.json"),
+    )
+)
+DEFAULT_MENTOR_STORE_PATH = _resolve_from_backend(str(DEFAULT_MENTOR_STORE_PATH))
+DEFAULT_MENTOR_BACKUP_DIR = Path(
+    os.getenv(
+        "WRAPPER_MENTOR_BACKUP_DIR",
+        str(BACKEND_ROOT / "data" / "mentors" / "backups"),
+    )
+)
+DEFAULT_MENTOR_BACKUP_DIR = _resolve_from_backend(str(DEFAULT_MENTOR_BACKUP_DIR))
 
 
 class MentorStore:
