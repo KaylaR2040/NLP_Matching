@@ -1,5 +1,6 @@
 {
   "version": 2,
+  "buildCommand": "python scripts/prepare_vercel_bundle.py",
   "rewrites": [
     {
       "source": "/(.*)",

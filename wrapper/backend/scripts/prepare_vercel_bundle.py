@@ -15,11 +15,11 @@ DEFAULT_DESTINATION = BACKEND_ROOT / "nlp_project"
 REQUIRED_BUNDLE_PATHS = (
     "main.py",
     "mentor_matching",
-    "data",
-    "state",
 )
 
 OPTIONAL_BUNDLE_PATHS = (
+    "data",
+    "state",
     "pyproject.toml",
     "README.md",
     "scoring.csv",
