@@ -122,6 +122,15 @@ DEFAULT_MATCHING_STATE_PATH = _default_matching_state
 
 load_dotenv(BACKEND_ENV_PATH)
 
+LOG_LEVEL = os.getenv("WRAPPER_LOG_LEVEL", "INFO").strip().upper()
+if not logging.getLogger().handlers:
+    logging.basicConfig(
+        level=LOG_LEVEL,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
+else:
+    logging.getLogger().setLevel(LOG_LEVEL)
+
 TOKEN_TTL_SECONDS = int(os.getenv("WRAPPER_TOKEN_TTL_SECONDS", "3600"))
 MAX_SESSIONS_PER_USER = int(os.getenv("WRAPPER_MAX_SESSIONS_PER_USER", "5"))
 REQUIRE_HTTPS = os.getenv("WRAPPER_REQUIRE_HTTPS", "false").strip().lower() in {
@@ -218,6 +227,7 @@ FAILED_ATTEMPTS_BY_USER: Dict[str, LoginRateBucket] = defaultdict(
     lambda: LoginRateBucket(attempts=deque(), lockout_until=0.0)
 )
 LOG = logging.getLogger("wrapper.auth")
+REQUEST_LOG = logging.getLogger("wrapper.request")
 MENTOR_STORE = MentorStore(store_path=MENTOR_STORE_PATH, backup_dir=MENTOR_BACKUP_DIR)
 LINKEDIN_ENRICHMENT = build_linkedin_enrichment_service_from_env()
 
@@ -252,6 +262,35 @@ async def enforce_https_transport(request: Request, call_next):
 
     response = await call_next(request)
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
+
+@app.middleware("http")
+async def log_request_lifecycle(request: Request, call_next):
+    started_at = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        duration_ms = int((time.perf_counter() - started_at) * 1000)
+        REQUEST_LOG.exception(
+            "request_error method=%s path=%s query=%s duration_ms=%s error=%s",
+            request.method,
+            request.url.path,
+            request.url.query,
+            duration_ms,
+            exc,
+        )
+        raise
+
+    duration_ms = int((time.perf_counter() - started_at) * 1000)
+    REQUEST_LOG.info(
+        "request method=%s path=%s query=%s status=%s duration_ms=%s",
+        request.method,
+        request.url.path,
+        request.url.query,
+        response.status_code,
+        duration_ms,
+    )
     return response
 
 

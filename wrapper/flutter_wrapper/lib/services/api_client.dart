@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 class SelectedFile {
@@ -26,7 +27,12 @@ class ApiClient {
   final String baseUrl;
   String? _authToken;
 
-  ApiClient({required this.baseUrl});
+  static const bool _apiDebugEnabled =
+      bool.fromEnvironment('WRAPPER_API_DEBUG', defaultValue: true);
+
+  ApiClient({required String baseUrl}) : baseUrl = _normalizeBaseUrl(baseUrl) {
+    _log('api_client_initialized base_url=$this.baseUrl');
+  }
 
   String? get authToken => _authToken;
 
@@ -36,6 +42,33 @@ class ApiClient {
 
   void clearAuthToken() {
     _authToken = null;
+  }
+
+  static String _normalizeBaseUrl(String raw) {
+    final value = raw.trim();
+    if (value.isEmpty || value.contains('|')) {
+      throw ApiClientException("Invalid API base URL: '$raw'");
+    }
+    final parsed = Uri.tryParse(value);
+    if (parsed == null ||
+        parsed.host.trim().isEmpty ||
+        (parsed.scheme != 'http' && parsed.scheme != 'https')) {
+      throw ApiClientException("Invalid API base URL: '$raw'");
+    }
+    final port = parsed.hasPort ? ':${parsed.port}' : '';
+    return '${parsed.scheme}://${parsed.host}$port';
+  }
+
+  static void _log(String message) {
+    if (_apiDebugEnabled) {
+      debugPrint(message);
+    }
+  }
+
+  Uri _uri(String path, {Map<String, String>? queryParameters}) {
+    final normalizedPath = path.startsWith('/') ? path : '/$path';
+    return Uri.parse('$baseUrl$normalizedPath')
+        .replace(queryParameters: queryParameters);
   }
 
   Map<String, String> _jsonHeaders({bool requireAuth = true}) {
@@ -57,12 +90,23 @@ class ApiClient {
     return {'data': parsed};
   }
 
-  void _throwIfError(http.Response response, String operation) {
+  String _truncate(String value, {int maxLength = 1200}) {
+    if (value.length <= maxLength) {
+      return value;
+    }
+    return '${value.substring(0, maxLength)}...(truncated)';
+  }
+
+  void _throwIfError(http.Response response, String operation, {Uri? uri}) {
     if (response.statusCode < 400) {
       return;
     }
     final body =
         response.body.trim().isEmpty ? 'No response body' : response.body;
+    _log(
+      'api_response_error operation=$operation method=HTTP status=${response.statusCode} '
+      'url=${uri ?? "unknown"} body=${_truncate(body)}',
+    );
     if (response.statusCode == 401 || response.statusCode == 403) {
       throw ApiUnauthorizedException(
           '$operation failed (${response.statusCode}): $body');
@@ -71,16 +115,110 @@ class ApiClient {
         '$operation failed (${response.statusCode}): $body');
   }
 
+  void _throwMultipartIfError(
+    int statusCode,
+    String operation,
+    String bodyText, {
+    required Uri uri,
+  }) {
+    _log(
+      'api_response_error operation=$operation method=MULTIPART status=$statusCode '
+      'url=$uri body=${_truncate(bodyText)}',
+    );
+    if (statusCode == 401 || statusCode == 403) {
+      throw ApiUnauthorizedException(
+          '$operation failed ($statusCode): $bodyText');
+    }
+    throw ApiClientException('$operation failed ($statusCode): $bodyText');
+  }
+
+  Future<http.Response> _request({
+    required String method,
+    required Uri uri,
+    required String operation,
+    bool requireAuth = true,
+    Object? body,
+    Map<String, String>? headers,
+  }) async {
+    _log('api_request method=$method url=$uri');
+    try {
+      final mergedHeaders = headers ?? _jsonHeaders(requireAuth: requireAuth);
+      late final http.Response response;
+      switch (method.toUpperCase()) {
+        case 'GET':
+          response = await http.get(uri, headers: mergedHeaders);
+          break;
+        case 'POST':
+          response = await http.post(uri, headers: mergedHeaders, body: body);
+          break;
+        case 'PUT':
+          response = await http.put(uri, headers: mergedHeaders, body: body);
+          break;
+        case 'DELETE':
+          response = await http.delete(uri, headers: mergedHeaders, body: body);
+          break;
+        default:
+          throw ApiClientException('Unsupported method: $method');
+      }
+      _throwIfError(response, operation, uri: uri);
+      return response;
+    } on ApiClientException {
+      rethrow;
+    } catch (e) {
+      _log(
+        'api_transport_error operation=$operation method=$method url=$uri error=$e',
+      );
+      throw ApiClientException('$operation failed (network): $e');
+    }
+  }
+
+  Future<Map<String, dynamic>> _sendMultipartJson({
+    required String operation,
+    required http.MultipartRequest request,
+  }) async {
+    _log('api_request method=MULTIPART url=${request.url}');
+    try {
+      final streamed = await request.send();
+      final bodyText = await streamed.stream.bytesToString();
+      if (streamed.statusCode >= 400) {
+        _throwMultipartIfError(
+          streamed.statusCode,
+          operation,
+          bodyText,
+          uri: request.url,
+        );
+      }
+      if (bodyText.trim().isEmpty) {
+        return {};
+      }
+      final parsed = jsonDecode(bodyText);
+      if (parsed is Map<String, dynamic>) {
+        return parsed;
+      }
+      return {'data': parsed};
+    } on ApiClientException {
+      rethrow;
+    } catch (e) {
+      _log(
+        'api_transport_error operation=$operation method=MULTIPART '
+        'url=${request.url} error=$e',
+      );
+      throw ApiClientException('$operation failed (network): $e');
+    }
+  }
+
   Future<Map<String, dynamic>> login({
     required String username,
     required String password,
   }) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/login'),
-      headers: _jsonHeaders(requireAuth: false),
+    final uri = _uri('/login');
+    final response = await _request(
+      method: 'POST',
+      uri: uri,
+      operation: 'login',
+      requireAuth: false,
       body: jsonEncode({'username': username, 'password': password}),
     );
-    _throwIfError(response, 'login');
     final body = _decodeBody(response);
     final token = (body['token'] ?? '').toString();
     if (token.isEmpty) {
@@ -94,30 +232,33 @@ class ApiClient {
     if (_authToken == null || _authToken!.isEmpty) {
       return;
     }
-    final response = await http.post(
-      Uri.parse('$baseUrl/logout'),
-      headers: _jsonHeaders(requireAuth: true),
+    final uri = _uri('/logout');
+    await _request(
+      method: 'POST',
+      uri: uri,
+      operation: 'logout',
       body: '{}',
     );
-    _throwIfError(response, 'logout');
   }
 
   Future<Map<String, dynamic>> getMe() async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/me'),
-      headers: _jsonHeaders(requireAuth: true),
+    final uri = _uri('/me');
+    final response = await _request(
+      method: 'GET',
+      uri: uri,
+      operation: 'get me',
     );
-    _throwIfError(response, 'get me');
     return _decodeBody(response);
   }
 
   Future<Map<String, dynamic>> refreshToken() async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/token/refresh'),
-      headers: _jsonHeaders(requireAuth: true),
+    final uri = _uri('/token/refresh');
+    final response = await _request(
+      method: 'POST',
+      uri: uri,
+      operation: 'refresh token',
       body: '{}',
     );
-    _throwIfError(response, 'refresh token');
     final body = _decodeBody(response);
     final token = (body['token'] ?? '').toString();
     if (token.isNotEmpty) {
@@ -130,7 +271,7 @@ class ApiClient {
     required SelectedFile menteeFile,
     required Map<String, dynamic> payload,
   }) async {
-    final uri = Uri.parse('$baseUrl/run_match');
+    final uri = _uri('/run_match');
     final request = http.MultipartRequest('POST', uri)
       ..fields['payload_json'] = jsonEncode(payload)
       ..files.add(http.MultipartFile.fromBytes(
@@ -142,22 +283,7 @@ class ApiClient {
     if (_authToken != null && _authToken!.isNotEmpty) {
       request.headers['Authorization'] = 'Bearer $_authToken';
     }
-
-    final streamed = await request.send();
-    final bodyText = await streamed.stream.bytesToString();
-    if (streamed.statusCode >= 400) {
-      if (streamed.statusCode == 401 || streamed.statusCode == 403) {
-        throw ApiUnauthorizedException(
-            'run_match failed (${streamed.statusCode}): $bodyText');
-      }
-      throw ApiClientException(
-          'run_match failed (${streamed.statusCode}): $bodyText');
-    }
-    final parsed = jsonDecode(bodyText);
-    if (parsed is Map<String, dynamic>) {
-      return parsed;
-    }
-    return {'data': parsed};
+    return _sendMultipartJson(operation: 'run_match', request: request);
   }
 
   Future<Map<String, dynamic>> listMentors({
@@ -178,32 +304,34 @@ class ApiClient {
       'offset': '$offset',
       'limit': '$limit',
     };
-    final uri = Uri.parse('$baseUrl/mentors').replace(queryParameters: params);
-    final response = await http.get(
-      uri,
-      headers: _jsonHeaders(requireAuth: true),
+    final uri = _uri('/mentors', queryParameters: params);
+    final response = await _request(
+      method: 'GET',
+      uri: uri,
+      operation: 'list mentors',
     );
-    _throwIfError(response, 'list mentors');
     return _decodeBody(response);
   }
 
   Future<Map<String, dynamic>> getMentor(String mentorId) async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/mentors/$mentorId'),
-      headers: _jsonHeaders(requireAuth: true),
+    final uri = _uri('/mentors/$mentorId');
+    final response = await _request(
+      method: 'GET',
+      uri: uri,
+      operation: 'get mentor',
     );
-    _throwIfError(response, 'get mentor');
     return _decodeBody(response);
   }
 
   Future<Map<String, dynamic>> createMentor(
       Map<String, dynamic> payload) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/mentors'),
-      headers: _jsonHeaders(requireAuth: true),
+    final uri = _uri('/mentors');
+    final response = await _request(
+      method: 'POST',
+      uri: uri,
+      operation: 'create mentor',
       body: jsonEncode(payload),
     );
-    _throwIfError(response, 'create mentor');
     return _decodeBody(response);
   }
 
@@ -211,21 +339,23 @@ class ApiClient {
     required String mentorId,
     required Map<String, dynamic> payload,
   }) async {
-    final response = await http.put(
-      Uri.parse('$baseUrl/mentors/$mentorId'),
-      headers: _jsonHeaders(requireAuth: true),
+    final uri = _uri('/mentors/$mentorId');
+    final response = await _request(
+      method: 'PUT',
+      uri: uri,
+      operation: 'update mentor',
       body: jsonEncode(payload),
     );
-    _throwIfError(response, 'update mentor');
     return _decodeBody(response);
   }
 
   Future<Map<String, dynamic>> deactivateMentor(String mentorId) async {
-    final response = await http.delete(
-      Uri.parse('$baseUrl/mentors/$mentorId'),
-      headers: _jsonHeaders(requireAuth: true),
+    final uri = _uri('/mentors/$mentorId');
+    final response = await _request(
+      method: 'DELETE',
+      uri: uri,
+      operation: 'deactivate mentor',
     );
-    _throwIfError(response, 'deactivate mentor');
     return _decodeBody(response);
   }
 
@@ -236,7 +366,7 @@ class ApiClient {
   }) async {
     final request = http.MultipartRequest(
       'POST',
-      Uri.parse('$baseUrl/mentors/import-csv'),
+      _uri('/mentors/import-csv'),
     )
       ..fields['source_csv_path'] = sourceCsvPath
       ..fields['dry_run'] = dryRun ? 'true' : 'false'
@@ -249,126 +379,123 @@ class ApiClient {
     if (_authToken != null && _authToken!.isNotEmpty) {
       request.headers['Authorization'] = 'Bearer $_authToken';
     }
-
-    final streamed = await request.send();
-    final bodyText = await streamed.stream.bytesToString();
-    if (streamed.statusCode >= 400) {
-      if (streamed.statusCode == 401 || streamed.statusCode == 403) {
-        throw ApiUnauthorizedException(
-            'import mentors csv failed (${streamed.statusCode}): $bodyText');
-      }
-      throw ApiClientException(
-          'import mentors csv failed (${streamed.statusCode}): $bodyText');
-    }
-
-    final parsed = jsonDecode(bodyText);
-    if (parsed is Map<String, dynamic>) {
-      return parsed;
-    }
-    return {'data': parsed};
+    return _sendMultipartJson(
+        operation: 'import mentors csv', request: request);
   }
 
   Future<List<int>> exportMentorsCsv({bool includeInactive = true}) async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/mentors/export-csv').replace(queryParameters: {
-        'include_inactive': includeInactive ? 'true' : 'false'
-      }),
-      headers: _jsonHeaders(requireAuth: true),
+    final uri = _uri(
+      '/mentors/export-csv',
+      queryParameters: {'include_inactive': includeInactive ? 'true' : 'false'},
     );
-    _throwIfError(response, 'export mentors csv');
+    final response = await _request(
+      method: 'GET',
+      uri: uri,
+      operation: 'export mentors csv',
+    );
     return response.bodyBytes;
   }
 
   Future<List<int>> exportMentorsXlsx({bool includeInactive = true}) async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/mentors/export-xlsx').replace(queryParameters: {
-        'include_inactive': includeInactive ? 'true' : 'false'
-      }),
-      headers: _jsonHeaders(requireAuth: true),
+    final uri = _uri(
+      '/mentors/export-xlsx',
+      queryParameters: {'include_inactive': includeInactive ? 'true' : 'false'},
     );
-    _throwIfError(response, 'export mentors xlsx');
+    final response = await _request(
+      method: 'GET',
+      uri: uri,
+      operation: 'export mentors xlsx',
+    );
     return response.bodyBytes;
   }
 
   Future<Map<String, dynamic>> syncMentorsToDefaultCsv(
       {bool includeInactive = true}) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/mentors/sync-to-default-csv').replace(
-          queryParameters: {
-            'include_inactive': includeInactive ? 'true' : 'false'
-          }),
-      headers: _jsonHeaders(requireAuth: true),
+    final uri = _uri(
+      '/mentors/sync-to-default-csv',
+      queryParameters: {'include_inactive': includeInactive ? 'true' : 'false'},
+    );
+    final response = await _request(
+      method: 'POST',
+      uri: uri,
+      operation: 'sync mentors to default csv',
       body: '{}',
     );
-    _throwIfError(response, 'sync mentors to default csv');
     return _decodeBody(response);
   }
 
   Future<Map<String, dynamic>> enqueueMentorLinkedInEnrichment(
       String mentorId) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/mentors/$mentorId/enrich-linkedin'),
-      headers: _jsonHeaders(requireAuth: true),
+    final uri = _uri('/mentors/$mentorId/enrich-linkedin');
+    final response = await _request(
+      method: 'POST',
+      uri: uri,
+      operation: 'linkedin enrichment',
       body: '{}',
     );
-    _throwIfError(response, 'linkedin enrichment');
     return _decodeBody(response);
   }
 
   Future<Map<String, dynamic>> getLinkedInEnrichmentConfig() async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/mentors/linkedin-enrichment/config'),
-      headers: _jsonHeaders(requireAuth: true),
+    final uri = _uri('/mentors/linkedin-enrichment/config');
+    final response = await _request(
+      method: 'GET',
+      uri: uri,
+      operation: 'get linkedin enrichment config',
     );
-    _throwIfError(response, 'get linkedin enrichment config');
     return _decodeBody(response);
   }
 
   Future<Map<String, dynamic>> bulkDeleteMentors(List<String> mentorIds) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/mentors/bulk-delete'),
-      headers: _jsonHeaders(requireAuth: true),
+    final uri = _uri('/mentors/bulk-delete');
+    final response = await _request(
+      method: 'POST',
+      uri: uri,
+      operation: 'bulk delete mentors',
       body: jsonEncode({'mentor_ids': mentorIds}),
     );
-    _throwIfError(response, 'bulk delete mentors');
     return _decodeBody(response);
   }
 
   Future<Map<String, dynamic>> updateOrgs() async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/update_orgs'),
-      headers: _jsonHeaders(requireAuth: true),
+    final uri = _uri('/update_orgs');
+    final response = await _request(
+      method: 'POST',
+      uri: uri,
+      operation: 'update orgs',
       body: '{}',
     );
-    _throwIfError(response, 'update orgs');
     return _decodeBody(response);
   }
 
   Future<Map<String, dynamic>> updateConcentrations() async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/update_concentrations'),
-      headers: _jsonHeaders(requireAuth: true),
+    final uri = _uri('/update_concentrations');
+    final response = await _request(
+      method: 'POST',
+      uri: uri,
+      operation: 'update concentrations',
       body: '{}',
     );
-    _throwIfError(response, 'update concentrations');
     return _decodeBody(response);
   }
 
   Future<Map<String, dynamic>> listDevFiles() async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/dev/files'),
-      headers: _jsonHeaders(requireAuth: true),
+    final uri = _uri('/dev/files');
+    final response = await _request(
+      method: 'GET',
+      uri: uri,
+      operation: 'list dev files',
     );
-    _throwIfError(response, 'list dev files');
     return _decodeBody(response);
   }
 
   Future<Map<String, dynamic>> getDevFile(String fileKey) async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/dev/file/$fileKey'),
-      headers: _jsonHeaders(requireAuth: true),
+    final uri = _uri('/dev/file/$fileKey');
+    final response = await _request(
+      method: 'GET',
+      uri: uri,
+      operation: 'get dev file',
     );
-    _throwIfError(response, 'get dev file');
     return _decodeBody(response);
   }
 
@@ -376,111 +503,122 @@ class ApiClient {
     required String fileKey,
     required String text,
   }) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/dev/file/save'),
-      headers: _jsonHeaders(requireAuth: true),
+    final uri = _uri('/dev/file/save');
+    final response = await _request(
+      method: 'POST',
+      uri: uri,
+      operation: 'save dev file',
       body: jsonEncode({
         'file_key': fileKey,
         'text': text,
       }),
     );
-    _throwIfError(response, 'save dev file');
     return _decodeBody(response);
   }
 
   Future<Map<String, dynamic>> revertDevFile(String fileKey) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/dev/file/revert-last'),
-      headers: _jsonHeaders(requireAuth: true),
+    final uri = _uri('/dev/file/revert-last');
+    final response = await _request(
+      method: 'POST',
+      uri: uri,
+      operation: 'revert dev file',
       body: jsonEncode({'file_key': fileKey}),
     );
-    _throwIfError(response, 'revert dev file');
     return _decodeBody(response);
   }
 
   Future<Map<String, dynamic>> runDevFileUpdate(String fileKey) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/dev/file/run-update'),
-      headers: _jsonHeaders(requireAuth: true),
+    final uri = _uri('/dev/file/run-update');
+    final response = await _request(
+      method: 'POST',
+      uri: uri,
+      operation: 'run dev file update',
       body: jsonEncode({'file_key': fileKey}),
     );
-    _throwIfError(response, 'run dev file update');
     return _decodeBody(response);
   }
 
   Future<Map<String, dynamic>> getDevMatchingState() async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/dev/matching-state'),
-      headers: _jsonHeaders(requireAuth: true),
+    final uri = _uri('/dev/matching-state');
+    final response = await _request(
+      method: 'GET',
+      uri: uri,
+      operation: 'get dev matching state',
     );
-    _throwIfError(response, 'get dev matching state');
     return _decodeBody(response);
   }
 
   Future<Map<String, dynamic>> getMajors() async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/get_majors'),
-      headers: _jsonHeaders(requireAuth: true),
+    final uri = _uri('/get_majors');
+    final response = await _request(
+      method: 'GET',
+      uri: uri,
+      operation: 'get majors',
     );
-    _throwIfError(response, 'get majors');
     return _decodeBody(response);
   }
 
   Future<void> saveMajors(String text) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/save_majors'),
-      headers: _jsonHeaders(requireAuth: true),
+    final uri = _uri('/save_majors');
+    await _request(
+      method: 'POST',
+      uri: uri,
+      operation: 'save majors',
       body: jsonEncode({'text': text}),
     );
-    _throwIfError(response, 'save majors');
   }
 
   Future<Map<String, dynamic>> getOrgsText() async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/get_orgs'),
-      headers: _jsonHeaders(requireAuth: true),
+    final uri = _uri('/get_orgs');
+    final response = await _request(
+      method: 'GET',
+      uri: uri,
+      operation: 'get orgs',
     );
-    _throwIfError(response, 'get orgs');
     return _decodeBody(response);
   }
 
   Future<void> saveOrgsText(String text) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/save_orgs'),
-      headers: _jsonHeaders(requireAuth: true),
+    final uri = _uri('/save_orgs');
+    await _request(
+      method: 'POST',
+      uri: uri,
+      operation: 'save orgs',
       body: jsonEncode({'text': text}),
     );
-    _throwIfError(response, 'save orgs');
   }
 
   Future<Map<String, dynamic>> getConcentrationsText() async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/get_concentrations'),
-      headers: _jsonHeaders(requireAuth: true),
+    final uri = _uri('/get_concentrations');
+    final response = await _request(
+      method: 'GET',
+      uri: uri,
+      operation: 'get concentrations',
     );
-    _throwIfError(response, 'get concentrations');
     return _decodeBody(response);
   }
 
   Future<void> saveConcentrationsText(String text) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/save_concentrations'),
-      headers: _jsonHeaders(requireAuth: true),
+    final uri = _uri('/save_concentrations');
+    await _request(
+      method: 'POST',
+      uri: uri,
+      operation: 'save concentrations',
       body: jsonEncode({'text': text}),
     );
-    _throwIfError(response, 'save concentrations');
   }
 
   Future<List<int>> exportAssignments(List<Map<String, dynamic>> rows) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/export_assignments'),
-      headers: _jsonHeaders(requireAuth: true),
+    final uri = _uri('/export_assignments');
+    final response = await _request(
+      method: 'POST',
+      uri: uri,
+      operation: 'export assignments',
       body: jsonEncode({
         'rows': rows,
         'filename': 'final_assignments.xlsx',
       }),
     );
-    _throwIfError(response, 'export assignments');
     return response.bodyBytes;
   }
 }

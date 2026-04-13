@@ -224,6 +224,9 @@ python -c "from api.index import app; print(app.title)"
   - `WRAPPER_CONCENTRATIONS_HTTP_TIMEOUT_SECONDS`
   - `WRAPPER_CONCENTRATIONS_HTTP_MAX_ATTEMPTS`
   - `WRAPPER_CONCENTRATIONS_HTTP_BACKOFF_SECONDS`
+- Request logging env vars:
+  - `WRAPPER_LOG_LEVEL` (default `INFO`)
+  - Logs method/path/status for each request and logs exception traces on failures.
 
 ## Vercel deployment notes
 

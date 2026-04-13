@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'constants/api_runtime_config.dart';
 import 'constants/ncsu_theme.dart';
 import 'screens/login_screen.dart';
 import 'screens/matching_dashboard_screen.dart';
@@ -25,29 +26,8 @@ class _WrapperAppState extends State<WrapperApp> {
 
   bool _bootstrapping = true;
   bool? _isDev;
-
-  String _resolveApiBaseUrl() {
-    const configured =
-        String.fromEnvironment('WRAPPER_API_BASE_URL', defaultValue: '');
-    final trimmedConfigured = configured.trim();
-    if (trimmedConfigured.isNotEmpty) {
-      return trimmedConfigured.endsWith('/')
-          ? trimmedConfigured.substring(0, trimmedConfigured.length - 1)
-          : trimmedConfigured;
-    }
-
-    final base = Uri.base;
-    final host = base.host.toLowerCase();
-    final isLocalHost = host == 'localhost' || host == '127.0.0.1';
-    if (isLocalHost) {
-      return 'http://localhost:8000';
-    }
-
-    final portPart = base.hasPort ? ':${base.port}' : '';
-    return '${base.scheme}://${base.host}$portPart';
-  }
-
-  late final ApiClient _apiClient = ApiClient(baseUrl: _resolveApiBaseUrl());
+  late final ApiClient _apiClient =
+      ApiClient(baseUrl: ApiRuntimeConfig.resolveBaseUrl());
 
   @override
   void initState() {
@@ -56,16 +36,17 @@ class _WrapperAppState extends State<WrapperApp> {
   }
 
   Future<void> _restoreSession() async {
-    try {
-      final token = await _secureStorage.read(key: _tokenStorageKey);
-      if (token == null || token.isEmpty) {
-        if (mounted) {
-          setState(() => _bootstrapping = false);
-        }
-        return;
+    final token = await _secureStorage.read(key: _tokenStorageKey);
+    if (token == null || token.isEmpty) {
+      if (mounted) {
+        setState(() => _bootstrapping = false);
       }
+      return;
+    }
 
-      _apiClient.setAuthToken(token);
+    _apiClient.setAuthToken(token);
+
+    try {
       var me = await _apiClient.getMe();
       final expiresAt = int.tryParse('${me['expires_at'] ?? 0}') ?? 0;
       final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
@@ -90,13 +71,27 @@ class _WrapperAppState extends State<WrapperApp> {
           _bootstrapping = false;
         });
       }
-    } catch (_) {
+    } on ApiUnauthorizedException {
       _apiClient.clearAuthToken();
       await _secureStorage.delete(key: _tokenStorageKey);
       await _secureStorage.delete(key: _isDevStorageKey);
       if (mounted) {
         setState(() {
           _isDev = null;
+          _bootstrapping = false;
+        });
+      }
+    } catch (e) {
+      final storedRole = await _secureStorage.read(key: _isDevStorageKey);
+      final cachedIsDev = storedRole == '1'
+          ? true
+          : storedRole == '0'
+              ? false
+              : false;
+      debugPrint('session_restore_non_auth_failure error=$e');
+      if (mounted) {
+        setState(() {
+          _isDev = cachedIsDev;
           _bootstrapping = false;
         });
       }

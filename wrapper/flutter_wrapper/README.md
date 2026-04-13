@@ -47,7 +47,9 @@ Backend URL resolution:
 - If `--dart-define=WRAPPER_API_BASE_URL=...` is provided, that URL is used.
 - Otherwise:
   - localhost frontend => `http://localhost:8000`
-  - non-local frontend => same-origin base URL
+  - non-local frontend => `https://nlpmatchbackend.vercel.app`
+- Invalid configured URLs (example: contains `|`) are rejected and fallback logic is used.
+- Temporary API request logging is enabled by default (`WRAPPER_API_DEBUG=true`).
 
 Credentials are never stored in Dart source. Configure users on backend via `wrapper/backend/.env`.
 
