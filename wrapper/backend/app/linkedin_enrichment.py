@@ -9,7 +9,6 @@ from urllib.parse import quote
 from urllib.parse import parse_qs, unquote, urlparse, urlunparse
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Protocol
-
 import requests
 
 
