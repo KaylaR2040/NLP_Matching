@@ -1,6 +1,11 @@
 {
   "version": 2,
   "buildCommand": "python scripts/prepare_vercel_bundle.py",
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 60
+    }
+  },
   "rewrites": [
     {
       "source": "/(.*)",

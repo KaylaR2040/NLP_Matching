@@ -105,11 +105,14 @@ PHD_PROGRAMS_PATH = Path(
 )
 PHD_PROGRAMS_PATH = _resolve_from_backend(str(PHD_PROGRAMS_PATH))
 DEFAULT_MAJORS_PATH = GRAD_PROGRAMS_PATH
+# On Vercel, /var/task (BACKEND_ROOT) is read-only.  Write backups to /tmp instead.
+_DEFAULT_BACKUP_DIR = (
+    Path("/tmp/nlp_matching_runtime/dev_file_backups")
+    if os.getenv("VERCEL", "").strip()
+    else BACKEND_ROOT / "data" / "dev_file_backups"
+)
 DEV_BACKUP_DIR = Path(
-    os.getenv(
-        "WRAPPER_DEV_BACKUP_DIR",
-        str(BACKEND_ROOT / "data" / "dev_file_backups"),
-    )
+    os.getenv("WRAPPER_DEV_BACKUP_DIR", str(_DEFAULT_BACKUP_DIR))
 )
 DEV_BACKUP_DIR = _resolve_from_backend(str(DEV_BACKUP_DIR))
 BACKEND_ENV_PATH = Path(

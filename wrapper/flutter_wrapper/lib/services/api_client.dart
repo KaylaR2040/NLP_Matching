@@ -23,7 +23,9 @@ class ApiUnauthorizedException extends ApiClientException {
   const ApiUnauthorizedException(super.message);
 }
 
-class ApiSessionExpiredException extends ApiClientException {
+// ApiSessionExpiredException extends ApiUnauthorizedException so that
+// `on ApiUnauthorizedException` handlers in every screen catch it correctly.
+class ApiSessionExpiredException extends ApiUnauthorizedException {
   const ApiSessionExpiredException(super.message);
 }
 
@@ -180,7 +182,9 @@ class ApiClient {
     required Uri uri,
     required String operation,
     bool requireAuth = true,
-    bool expireSessionOnAuthFailure = false,
+    // Default true: any 401/403 on an authenticated call triggers re-login.
+    // Pass false only for calls where 401 has different semantics (e.g. login).
+    bool expireSessionOnAuthFailure = true,
     Object? body,
     Map<String, String>? headers,
   }) async {
@@ -224,7 +228,8 @@ class ApiClient {
   Future<Map<String, dynamic>> _sendMultipartJson({
     required String operation,
     required http.MultipartRequest request,
-    bool expireSessionOnAuthFailure = false,
+    // Default true: any 401/403 triggers re-login (same as _request).
+    bool expireSessionOnAuthFailure = true,
   }) async {
     _log('api_request method=MULTIPART url=${request.url}');
     try {
@@ -268,6 +273,8 @@ class ApiClient {
       uri: uri,
       operation: 'login',
       requireAuth: false,
+      // 401 here = wrong credentials, not session expiry — don't trigger re-login flow.
+      expireSessionOnAuthFailure: false,
       body: jsonEncode({'username': username, 'password': password}),
     );
     final body = _decodeBody(response);
