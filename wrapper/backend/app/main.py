@@ -145,6 +145,10 @@ _TOKEN_SECRET_FROM_ENV = os.getenv("WRAPPER_TOKEN_SECRET", "").strip()
 # Vercel free-tier serverless limit is 60s; use 50s to leave a safety margin.
 # Increase (e.g. 270) when deploying on a platform with a longer timeout.
 MATCH_TIMEOUT_SECONDS = int(os.getenv("WRAPPER_MATCH_TIMEOUT_SECONDS", "50"))
+# Timeout for dev-file update scripts (pull_orgs, pull_concentrations, etc.).
+# Must be lower than the Vercel platform timeout so the function can return a proper
+# HTTP 504 instead of having the platform drop the TCP connection (→ "Load failed" on client).
+SCRIPT_TIMEOUT_SECONDS = int(os.getenv("WRAPPER_SCRIPT_TIMEOUT_SECONDS", "45"))
 MAX_SESSIONS_PER_USER = int(os.getenv("WRAPPER_MAX_SESSIONS_PER_USER", "5"))
 REQUIRE_HTTPS = os.getenv("WRAPPER_REQUIRE_HTTPS", "false").strip().lower() in {
     "1",
@@ -981,12 +985,24 @@ def _run_script(script_path: Path, args: Optional[List[str]] = None) -> Dict[str
     cmd = [sys.executable, str(script_path)]
     if args:
         cmd.extend(args)
-    completed = subprocess.run(
-        cmd,
-        cwd=str(script_path.parent),
-        capture_output=True,
-        text=True,
-    )
+    try:
+        completed = subprocess.run(
+            cmd,
+            cwd=str(script_path.parent),
+            capture_output=True,
+            text=True,
+            timeout=SCRIPT_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        raise HTTPException(
+            status_code=504,
+            detail={
+                "message": f"Script timed out after {SCRIPT_TIMEOUT_SECONDS}s",
+                "script": _normalize_repo_path_for_api(str(script_path), fallback=script_path.name),
+                "stdout": "",
+                "stderr": "",
+            },
+        )
     if completed.returncode != 0:
         raise HTTPException(
             status_code=500,
