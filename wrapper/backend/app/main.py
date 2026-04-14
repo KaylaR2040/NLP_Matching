@@ -198,6 +198,12 @@ GITHUB_SYNC_TIMEOUT_SECONDS = float(
     os.getenv("WRAPPER_GITHUB_SYNC_TIMEOUT_SECONDS", "20")
 )
 IS_VERCEL = os.getenv("VERCEL", "").strip() != ""
+_ALLOWED_ORIGINS_RAW = os.getenv("WRAPPER_ALLOWED_ORIGINS", "").strip()
+ALLOWED_ORIGINS: List[str] = (
+    [o.strip() for o in _ALLOWED_ORIGINS_RAW.split(",") if o.strip()]
+    if _ALLOWED_ORIGINS_RAW
+    else ["*"]
+)
 
 BASE_DEV_EDITABLE_FILES: Dict[str, Dict[str, Any]] = {
     "ncsu_orgs": {
@@ -312,8 +318,8 @@ app = FastAPI(title="NLP Mentor Matcher Wrapper API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=False,  # Bearer tokens are not CORS credentials — only cookies are
     allow_methods=["*"],
     allow_headers=["*"],
 )
