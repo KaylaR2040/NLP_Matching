@@ -139,6 +139,9 @@ else:
     logging.getLogger().setLevel(LOG_LEVEL)
 
 TOKEN_TTL_SECONDS = int(os.getenv("WRAPPER_TOKEN_TTL_SECONDS", "3600"))
+# Secret used to sign auth tokens. Must be set in production for tokens to survive
+# process restarts (Vercel cold starts). Generate with: python -c "import secrets; print(secrets.token_hex(32))"
+_TOKEN_SECRET_FROM_ENV = os.getenv("WRAPPER_TOKEN_SECRET", "").strip()
 # Vercel free-tier serverless limit is 60s; use 50s to leave a safety margin.
 # Increase (e.g. 270) when deploying on a platform with a longer timeout.
 MATCH_TIMEOUT_SECONDS = int(os.getenv("WRAPPER_MATCH_TIMEOUT_SECONDS", "50"))
@@ -253,7 +256,6 @@ class LoginRateBucket:
 
 
 security = HTTPBearer(auto_error=False)
-SESSION_TOKENS: Dict[str, AuthSession] = {}
 FAILED_ATTEMPTS_BY_IP: Dict[str, LoginRateBucket] = defaultdict(
     lambda: LoginRateBucket(attempts=deque(), lockout_until=0.0)
 )
@@ -262,6 +264,15 @@ FAILED_ATTEMPTS_BY_USER: Dict[str, LoginRateBucket] = defaultdict(
 )
 LOG = logging.getLogger("wrapper.auth")
 REQUEST_LOG = logging.getLogger("wrapper.request")
+if _TOKEN_SECRET_FROM_ENV:
+    TOKEN_SECRET = _TOKEN_SECRET_FROM_ENV
+else:
+    TOKEN_SECRET = secrets.token_hex(32)
+    LOG.warning(
+        "WRAPPER_TOKEN_SECRET is not set. Auth tokens will not survive process restarts "
+        "(Vercel cold starts will invalidate all sessions). "
+        "Set WRAPPER_TOKEN_SECRET in your environment to fix this."
+    )
 try:
     MENTOR_STORE = MentorStore(
         store_path=MENTOR_STORE_PATH,
@@ -401,38 +412,53 @@ def _verify_pbkdf2_password(password: str, encoded_hash: str) -> bool:
     return hmac.compare_digest(actual, expected)
 
 
-def _cleanup_expired_sessions() -> None:
-    now = time.time()
-    expired_tokens = [token for token, session in SESSION_TOKENS.items() if session.expires_at <= now]
-    for token in expired_tokens:
-        SESSION_TOKENS.pop(token, None)
+def _b64url_encode(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+
+def _b64url_decode_str(s: str) -> bytes:
+    pad = (-len(s)) % 4
+    return base64.urlsafe_b64decode(s + "=" * pad)
 
 
 def _issue_token(*, username: str, is_dev: bool) -> Tuple[str, AuthSession]:
-    _cleanup_expired_sessions()
     now = time.time()
-    sessions_for_user = sorted(
-        [
-            (token, session)
-            for token, session in SESSION_TOKENS.items()
-            if session.username == username and session.is_dev == is_dev
-        ],
-        key=lambda pair: pair[1].issued_at,
-    )
-    while len(sessions_for_user) >= max(1, MAX_SESSIONS_PER_USER):
-        token_to_drop, _ = sessions_for_user.pop(0)
-        SESSION_TOKENS.pop(token_to_drop, None)
-
-    token = secrets.token_urlsafe(32)
     expires_at = now + TOKEN_TTL_SECONDS
-    session = AuthSession(
-        username=username,
-        is_dev=is_dev,
-        issued_at=now,
-        expires_at=expires_at,
-    )
-    SESSION_TOKENS[token] = session
+    payload = {
+        "sub": username,
+        "dev": is_dev,
+        "iat": int(now),
+        "exp": int(expires_at),
+        "jti": secrets.token_urlsafe(16),
+    }
+    payload_b64 = _b64url_encode(json.dumps(payload, separators=(",", ":")).encode())
+    sig = hmac.new(TOKEN_SECRET.encode(), payload_b64.encode(), hashlib.sha256).digest()
+    token = f"{payload_b64}.{_b64url_encode(sig)}"
+    session = AuthSession(username=username, is_dev=is_dev, issued_at=now, expires_at=expires_at)
     return token, session
+
+
+def _decode_token(token: str) -> Optional[AuthSession]:
+    try:
+        parts = token.split(".", 1)
+        if len(parts) != 2:
+            return None
+        payload_b64, sig_b64 = parts
+        expected = hmac.new(TOKEN_SECRET.encode(), payload_b64.encode(), hashlib.sha256).digest()
+        if not hmac.compare_digest(expected, _b64url_decode_str(sig_b64)):
+            return None
+        payload = json.loads(_b64url_decode_str(payload_b64))
+        exp = float(payload.get("exp", 0))
+        if time.time() > exp:
+            return None
+        return AuthSession(
+            username=str(payload["sub"]),
+            is_dev=bool(payload.get("dev", False)),
+            issued_at=float(payload.get("iat", 0)),
+            expires_at=exp,
+        )
+    except Exception:
+        return None
 
 
 def _client_ip(request: Request) -> str:
@@ -483,14 +509,13 @@ def _require_auth_context(*, require_dev: bool = False):
         request: Request,
         credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     ) -> AuthContext:
-        _cleanup_expired_sessions()
         ip = _client_ip(request)
         if credentials is None or credentials.scheme.lower() != "bearer":
             LOG.warning("auth_missing_token ip=%s path=%s", ip, request.url.path)
             raise HTTPException(status_code=401, detail="Missing bearer token")
 
         token = credentials.credentials.strip()
-        session = SESSION_TOKENS.get(token)
+        session = _decode_token(token)
         if session is None:
             LOG.warning("auth_invalid_token ip=%s path=%s", ip, request.url.path)
             raise HTTPException(status_code=401, detail="Invalid or expired token")
@@ -1462,9 +1487,7 @@ def login(request: LoginRequest, http_request: Request) -> LoginResponse:
 
 @app.post("/token/refresh", response_model=LoginResponse)
 def refresh_token(context: AuthContext = Depends(_require_auth_context())) -> LoginResponse:
-    old_token = context.token
     session = context.session
-    SESSION_TOKENS.pop(old_token, None)
     new_token, _new_session = _issue_token(username=session.username, is_dev=session.is_dev)
     LOG.info("token_refreshed username=%s is_dev=%s", session.username, session.is_dev)
     return LoginResponse(
@@ -1478,15 +1501,9 @@ def refresh_token(context: AuthContext = Depends(_require_auth_context())) -> Lo
 @app.post("/logout")
 def logout(context: AuthContext = Depends(_require_auth_context())) -> Dict[str, str]:
     session = context.session
-    # Drop all tokens for this user and role to invalidate active sessions.
-    to_remove = [
-        token
-        for token, candidate in SESSION_TOKENS.items()
-        if candidate.username == session.username and candidate.is_dev == session.is_dev
-    ]
-    for token in to_remove:
-        SESSION_TOKENS.pop(token, None)
-    LOG.info("logout username=%s is_dev=%s revoked_tokens=%s", session.username, session.is_dev, len(to_remove))
+    # Tokens are stateless (HMAC-signed); the client must discard the token on logout.
+    # Server-side revocation is not supported without a token blocklist (acceptable trade-off).
+    LOG.info("logout username=%s is_dev=%s", session.username, session.is_dev)
     return {"status": "ok"}
 
 
