@@ -1,0 +1,1 @@
+from wrapper.backend.app.main import app
