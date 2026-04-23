@@ -205,12 +205,29 @@ GITHUB_SYNC_TIMEOUT_SECONDS = float(
     os.getenv("WRAPPER_GITHUB_SYNC_TIMEOUT_SECONDS", "20")
 )
 IS_VERCEL = os.getenv("VERCEL", "").strip() != ""
-_ALLOWED_ORIGINS_RAW = os.getenv("WRAPPER_ALLOWED_ORIGINS", "").strip()
-ALLOWED_ORIGINS: List[str] = (
-    [o.strip() for o in _ALLOWED_ORIGINS_RAW.split(",") if o.strip()]
-    if _ALLOWED_ORIGINS_RAW
-    else ["*"]
-)
+
+
+def _parse_allowed_origins(raw_value: str) -> List[str]:
+    trimmed = raw_value.strip()
+    if not trimmed:
+        return ["*"]
+
+    parsed: List[str] = []
+    for candidate in trimmed.replace("\n", ",").split(","):
+        origin = candidate.strip().strip('"').strip("'").rstrip("/")
+        if not origin:
+            continue
+        if origin == "*":
+            return ["*"]
+        parsed.append(origin)
+
+    if not parsed:
+        return ["*"]
+    return list(dict.fromkeys(parsed))
+
+
+_ALLOWED_ORIGINS_RAW = os.getenv("WRAPPER_ALLOWED_ORIGINS", "")
+ALLOWED_ORIGINS: List[str] = _parse_allowed_origins(_ALLOWED_ORIGINS_RAW)
 
 BASE_DEV_EDITABLE_FILES: Dict[str, Dict[str, Any]] = {
     "ncsu_orgs": {
@@ -323,14 +340,6 @@ LOG.info(
 
 app = FastAPI(title="NLP Mentor Matcher Wrapper API", version="1.0.0")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=False,  # Bearer tokens are not CORS credentials — only cookies are
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 
 @app.middleware("http")
 async def enforce_https_transport(request: Request, call_next):
@@ -381,6 +390,50 @@ async def log_request_lifecycle(request: Request, call_next):
         duration_ms,
     )
     return response
+
+
+@app.middleware("http")
+async def log_run_match_lifecycle(request: Request, call_next):
+    if request.url.path != "/run_match":
+        return await call_next(request)
+
+    started_at = time.perf_counter()
+    origin = request.headers.get("origin", "").strip() or "none"
+    REQUEST_LOG.info("run_match_request method=%s origin=%s", request.method, origin)
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        duration_ms = int((time.perf_counter() - started_at) * 1000)
+        REQUEST_LOG.exception(
+            "run_match_error method=%s origin=%s duration_ms=%s error=%s",
+            request.method,
+            origin,
+            duration_ms,
+            exc,
+        )
+        raise
+
+    duration_ms = int((time.perf_counter() - started_at) * 1000)
+    REQUEST_LOG.info(
+        "run_match_response method=%s origin=%s status=%s duration_ms=%s",
+        request.method,
+        origin,
+        response.status_code,
+        duration_ms,
+    )
+    return response
+
+
+# Add CORS middleware after HTTP middleware declarations so CORS wraps
+# all request paths and error responses, including early middleware returns.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=False,  # Bearer tokens are not CORS credentials — only cookies are
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+LOG.info("cors_config allowed_origins=%s allow_credentials=%s", ALLOWED_ORIGINS, False)
 
 
 def _b64decode_nopad(value: str) -> bytes:
@@ -1987,130 +2040,148 @@ def _apply_nlp_runtime_overrides(runtime_nlp_dir: Path) -> None:
 
 @app.post("/run_match")
 async def run_match(
+    request: Request,
     mentee_file: UploadFile = File(...),
     mentor_file: Optional[UploadFile] = File(None),
     payload_json: str = Form("{}"),
     _session: AuthSession = Depends(_require_auth()),
 ) -> Dict[str, Any]:
-    payload = _load_payload(payload_json)
+    try:
+        payload = _load_payload(payload_json)
 
-    if not NLP_MAIN_PATH.exists():
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                "Matching runtime is not available in this deployment. "
-                f"Expected nlp_project/main.py at {NLP_MAIN_PATH}. "
-                "Deploy with nlp_project included or set WRAPPER_NLP_PROJECT_DIR."
-            ),
-        )
-
-    with tempfile.TemporaryDirectory(prefix="matcher_wrapper_") as tmp:
-        tmp_dir = Path(tmp)
-        output_dir = tmp_dir / "output"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        runtime_nlp_dir = tmp_dir / "nlp_project_runtime"
-        shutil.copytree(NLP_PROJECT_DIR, runtime_nlp_dir)
-        _apply_nlp_runtime_overrides(runtime_nlp_dir)
-        runtime_nlp_main = runtime_nlp_dir / "main.py"
-        if not runtime_nlp_main.exists():
+        if not NLP_MAIN_PATH.exists():
             raise HTTPException(
-                status_code=500,
-                detail=f"Runtime NLP bundle missing main.py at {runtime_nlp_main}",
+                status_code=503,
+                detail=(
+                    "Matching runtime is not available in this deployment. "
+                    f"Expected nlp_project/main.py at {NLP_MAIN_PATH}. "
+                    "Deploy with nlp_project included or set WRAPPER_NLP_PROJECT_DIR."
+                ),
             )
 
-        mentee_csv = tmp_dir / "mentees.csv"
-        mentor_csv = tmp_dir / "mentors.csv"
-        state_path = tmp_dir / "state.json"
-        mentor_source = "manager_store"
-
-        _as_csv(mentee_file.filename or "mentees.csv", await mentee_file.read(), mentee_csv)
-        mentor_payload: Optional[bytes] = None
-        mentor_filename = "mentors.csv"
-        if mentor_file is not None:
-            mentor_payload = await mentor_file.read()
-            mentor_filename = mentor_file.filename or mentor_filename
-
-        if mentor_payload:
-            _as_csv(mentor_filename, mentor_payload, mentor_csv)
-            mentor_source = "uploaded_file"
-        else:
-            export_payload = MENTOR_STORE.export_csv(include_inactive=False)
-            if int(export_payload.get("rows", 0)) <= 0:
+        with tempfile.TemporaryDirectory(prefix="matcher_wrapper_") as tmp:
+            tmp_dir = Path(tmp)
+            output_dir = tmp_dir / "output"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            runtime_nlp_dir = tmp_dir / "nlp_project_runtime"
+            shutil.copytree(NLP_PROJECT_DIR, runtime_nlp_dir)
+            _apply_nlp_runtime_overrides(runtime_nlp_dir)
+            runtime_nlp_main = runtime_nlp_dir / "main.py"
+            if not runtime_nlp_main.exists():
                 raise HTTPException(
-                    status_code=400,
-                    detail="No active mentors are available in Mentor Manager. Add mentors before running matching.",
+                    status_code=500,
+                    detail=f"Runtime NLP bundle missing main.py at {runtime_nlp_main}",
                 )
-            mentor_csv.write_text(str(export_payload.get("csv_text", "")), encoding="utf-8")
-            mentor_source = "mentor_manager"
 
-        mentor_capacities = _extract_mentor_capacity_map(mentor_csv)
-        state_payload = _state_dict(payload)
-        state_path.write_text(json.dumps(state_payload, indent=2), encoding="utf-8")
-        try:
-            MATCHING_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-            MATCHING_STATE_PATH.write_text(json.dumps(state_payload, indent=2), encoding="utf-8")
-        except Exception as exc:
-            LOG.warning("state_mirror_write_failed path=%s error=%s", MATCHING_STATE_PATH, exc)
+            mentee_csv = tmp_dir / "mentees.csv"
+            mentor_csv = tmp_dir / "mentors.csv"
+            state_path = tmp_dir / "state.json"
+            mentor_source = "manager_store"
 
-        cmd = [
-            sys.executable,
-            str(runtime_nlp_main),
-            "--mentee-csv",
-            str(mentee_csv),
-            "--mentor-csv",
-            str(mentor_csv),
-            "--state-path",
-            str(state_path),
-            "--output-dir",
-            str(output_dir),
-            "--top-n",
-            str(payload.top_n),
-            "run",
-        ]
+            _as_csv(mentee_file.filename or "mentees.csv", await mentee_file.read(), mentee_csv)
+            mentor_payload: Optional[bytes] = None
+            mentor_filename = "mentors.csv"
+            if mentor_file is not None:
+                mentor_payload = await mentor_file.read()
+                mentor_filename = mentor_file.filename or mentor_filename
 
-        try:
-            completed = subprocess.run(
-                cmd,
-                cwd=str(runtime_nlp_dir),
-                capture_output=True,
-                text=True,
-                timeout=MATCH_TIMEOUT_SECONDS,
-            )
-        except subprocess.TimeoutExpired:
-            raise HTTPException(
-                status_code=504,
-                detail={
-                    "message": (
-                        f"Matching engine timed out after {MATCH_TIMEOUT_SECONDS}s. "
-                        "For large datasets, run locally or set WRAPPER_MATCH_TIMEOUT_SECONDS "
-                        "to a higher value (Vercel Pro allows up to 300s)."
-                    ),
-                    "timeout_seconds": MATCH_TIMEOUT_SECONDS,
-                },
-            )
-        if completed.returncode != 0:
-            raise HTTPException(
-                status_code=500,
-                detail={
-                    "message": "Matching pipeline failed",
-                    "stdout": completed.stdout,
-                    "stderr": completed.stderr,
-                },
-            )
+            if mentor_payload:
+                _as_csv(mentor_filename, mentor_payload, mentor_csv)
+                mentor_source = "uploaded_file"
+            else:
+                export_payload = MENTOR_STORE.export_csv(include_inactive=False)
+                if int(export_payload.get("rows", 0)) <= 0:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="No active mentors are available in Mentor Manager. Add mentors before running matching.",
+                    )
+                mentor_csv.write_text(str(export_payload.get("csv_text", "")), encoding="utf-8")
+                mentor_source = "mentor_manager"
 
-        output_json_path = output_dir / "latest_matches.json"
-        if not output_json_path.exists():
-            raise HTTPException(status_code=500, detail="Pipeline completed but latest_matches.json was not found")
+            mentor_capacities = _extract_mentor_capacity_map(mentor_csv)
+            state_payload = _state_dict(payload)
+            state_path.write_text(json.dumps(state_payload, indent=2), encoding="utf-8")
+            try:
+                MATCHING_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+                MATCHING_STATE_PATH.write_text(json.dumps(state_payload, indent=2), encoding="utf-8")
+            except Exception as exc:
+                LOG.warning("state_mirror_write_failed path=%s error=%s", MATCHING_STATE_PATH, exc)
 
-        result = json.loads(output_json_path.read_text(encoding="utf-8"))
-        if isinstance(result, dict):
-            _attach_mentor_capacity_metadata(result, mentor_capacities)
-        return {
-            "status": "ok",
-            "result": result,
-            "stdout": completed.stdout,
-            "mentor_source": mentor_source,
-        }
+            cmd = [
+                sys.executable,
+                str(runtime_nlp_main),
+                "--mentee-csv",
+                str(mentee_csv),
+                "--mentor-csv",
+                str(mentor_csv),
+                "--state-path",
+                str(state_path),
+                "--output-dir",
+                str(output_dir),
+                "--top-n",
+                str(payload.top_n),
+                "run",
+            ]
+
+            try:
+                completed = subprocess.run(
+                    cmd,
+                    cwd=str(runtime_nlp_dir),
+                    capture_output=True,
+                    text=True,
+                    timeout=MATCH_TIMEOUT_SECONDS,
+                )
+            except subprocess.TimeoutExpired:
+                raise HTTPException(
+                    status_code=504,
+                    detail={
+                        "message": (
+                            f"Matching engine timed out after {MATCH_TIMEOUT_SECONDS}s. "
+                            "For large datasets, run locally or set WRAPPER_MATCH_TIMEOUT_SECONDS "
+                            "to a higher value (Vercel Pro allows up to 300s)."
+                        ),
+                        "timeout_seconds": MATCH_TIMEOUT_SECONDS,
+                    },
+                )
+            if completed.returncode != 0:
+                raise HTTPException(
+                    status_code=500,
+                    detail={
+                        "message": "Matching pipeline failed",
+                        "stdout": completed.stdout,
+                        "stderr": completed.stderr,
+                    },
+                )
+
+            output_json_path = output_dir / "latest_matches.json"
+            if not output_json_path.exists():
+                raise HTTPException(status_code=500, detail="Pipeline completed but latest_matches.json was not found")
+
+            result = json.loads(output_json_path.read_text(encoding="utf-8"))
+            if isinstance(result, dict):
+                _attach_mentor_capacity_metadata(result, mentor_capacities)
+            return {
+                "status": "ok",
+                "result": result,
+                "stdout": completed.stdout,
+                "mentor_source": mentor_source,
+            }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        REQUEST_LOG.exception(
+            "run_match_unhandled_exception method=%s origin=%s error=%s",
+            request.method,
+            request.headers.get("origin", "").strip() or "none",
+            exc,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "message": "Unexpected /run_match server error",
+                "error": str(exc),
+            },
+        ) from exc
 
 
 @app.post("/update_orgs")

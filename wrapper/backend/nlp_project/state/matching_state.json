@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "excluded_mentee_ids": [],
+  "excluded_mentor_ids": [],
+  "rejected_pairs": [
+    "anmehra@ncsu.edu::cassidypetrykowski@gmail.com"
+  ],
+  "locked_pairs": [
+    "amesiti@ncsu.edu::mattpurvis2001@gmail.com",
+    "anmehra@ncsu.edu::mattpurvis2001@gmail.com",
+    "artala@ncsu.edu::cassidypetrykowski@gmail.com",
+    "jppezzi@ncsu.edu::jamescolem3@gmail.com",
+    "cfbarlow@ncsu.edu::jamescolem3@gmail.com"
+  ],
+  "global_weights": {},
+  "mentee_weight_overrides": {},
+  "run_count": 0
+}
