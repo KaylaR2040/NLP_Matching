@@ -2,9 +2,33 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/mentee_form_data.dart';
 
+// Backend URL for config list fetching.
+// Override at build time with: --dart-define=BACKEND_CONFIG_URL=https://your-service.onrender.com
+const String _backendConfigUrl = String.fromEnvironment(
+  'BACKEND_CONFIG_URL',
+  defaultValue: 'https://nlp-mentor-backend.onrender.com',
+);
+
 class ApiService {
   // Web app host. API requests are expected under /api on the same domain.
   static const String baseUrl = 'https://menteeform.vercel.app/api';
+
+  /// Fetch a config list (orgs, concentrations, etc.) from the wrapper backend.
+  /// Returns a sorted list of strings on success, throws on failure.
+  /// Keys: 'orgs', 'concentrations', 'grad-programs', 'abm-programs', 'phd-programs'
+  static Future<List<String>> fetchConfigList(String key) async {
+    final url = Uri.parse('$_backendConfigUrl/config/$key');
+    final response = await http
+        .get(url, headers: {'Accept': 'application/json'})
+        .timeout(const Duration(seconds: 6));
+    if (response.statusCode == 200) {
+      final decoded = json.decode(response.body);
+      if (decoded is List) {
+        return List<String>.from(decoded.whereType<String>());
+      }
+    }
+    throw Exception('Config fetch failed for "$key": HTTP ${response.statusCode}');
+  }
 
   /// Submit a mentee application to the backend
   /// Called when the form submit button is pressed

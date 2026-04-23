@@ -1,6 +1,9 @@
 import 'package:flutter/services.dart';
+import 'api_service.dart';
 
-/// Loads and caches option data from text files in assets.
+/// Loads and caches option data.
+/// Primary source: wrapper backend API (/config/* endpoints).
+/// Fallback: bundled asset .txt files (used when backend is unreachable).
 class FormDataLoader {
   static final FormDataLoader _instance = FormDataLoader._internal();
   static const String _dataDir = 'assets/data';
@@ -38,6 +41,56 @@ class FormDataLoader {
     return value;
   }
 
+  List<String> _parseLines(String text, {bool canonicalizeDegrees = false}) {
+    final values = text
+        .split('\n')
+        .map((line) => line.trim())
+        .map((line) => canonicalizeDegrees ? _canonicalizeDegreeProgramLine(line) : line)
+        .where((line) => line.isNotEmpty)
+        .toSet()
+        .toList();
+    values.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return values;
+  }
+
+  Future<List<String>> _loadFile(String path) async {
+    try {
+      final normalizeDegreeLine = _isDegreeFilePath(path);
+      final data = await rootBundle.loadString(path);
+      return _parseLines(data, canonicalizeDegrees: normalizeDegreeLine);
+    } catch (e) {
+      // ignore: avoid_print
+      print('FormDataLoader: error loading asset $path: $e');
+      return [];
+    }
+  }
+
+  /// Try fetching [configKey] from backend; on failure fall back to [assetPath].
+  Future<List<String>> _loadWithFallback(
+    String configKey,
+    String assetPath, {
+    bool canonicalizeDegrees = false,
+  }) async {
+    try {
+      final items = await ApiService.fetchConfigList(configKey);
+      if (items.isNotEmpty) {
+        if (canonicalizeDegrees) {
+          final normalized = items
+              .map(_canonicalizeDegreeProgramLine)
+              .where((s) => s.isNotEmpty)
+              .toSet()
+              .toList()
+            ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+          return normalized;
+        }
+        return items;
+      }
+    } catch (_) {
+      // Backend unreachable — fall through to asset.
+    }
+    return _loadFile(assetPath);
+  }
+
   Future<void> loadAll() async {
     await Future.wait([
       loadNcsuOrgs(),
@@ -54,50 +107,41 @@ class FormDataLoader {
   List<String> get abmPrograms => _abmPrograms ?? [];
   List<String> get phdPrograms => _phdPrograms ?? [];
 
-  Future<List<String>> _loadFile(String path) async {
-    try {
-      final normalizeDegreeLine = _isDegreeFilePath(path);
-      final data = await rootBundle.loadString(path);
-      final values = data
-          .split('\n')
-          .map((line) => line.trim())
-          .map(
-            (line) => normalizeDegreeLine
-                ? _canonicalizeDegreeProgramLine(line)
-                : line,
-          )
-          .where((line) => line.isNotEmpty)
-          .toList();
-      values.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-      return values;
-    } catch (e) {
-      print('Error loading $path: $e');
-      return [];
-    }
-  }
-
   Future<List<String>> loadNcsuOrgs() async {
-    _ncsuOrgs ??= await _loadFile('$_dataDir/ncsu_orgs.txt');
+    _ncsuOrgs ??= await _loadWithFallback('orgs', '$_dataDir/ncsu_orgs.txt');
     return _ncsuOrgs!;
   }
 
   Future<List<String>> loadUndergradPrograms() async {
+    // undergrad programs are not yet in the backend config — load from asset only.
     _undergradPrograms ??= await _loadFile('$_dataDir/undergrad_programs.txt');
     return _undergradPrograms!;
   }
 
   Future<List<String>> loadGradPrograms() async {
-    _gradPrograms ??= await _loadFile('$_dataDir/grad_programs.txt');
+    _gradPrograms ??= await _loadWithFallback(
+      'grad-programs',
+      '$_dataDir/grad_programs.txt',
+      canonicalizeDegrees: true,
+    );
     return _gradPrograms!;
   }
 
   Future<List<String>> loadAbmPrograms() async {
-    _abmPrograms ??= await _loadFile('$_dataDir/abm_programs.txt');
+    _abmPrograms ??= await _loadWithFallback(
+      'abm-programs',
+      '$_dataDir/abm_programs.txt',
+      canonicalizeDegrees: true,
+    );
     return _abmPrograms!;
   }
 
   Future<List<String>> loadPhdPrograms() async {
-    _phdPrograms ??= await _loadFile('$_dataDir/phd_programs.txt');
+    _phdPrograms ??= await _loadWithFallback(
+      'phd-programs',
+      '$_dataDir/phd_programs.txt',
+      canonicalizeDegrees: true,
+    );
     return _phdPrograms!;
   }
 }
