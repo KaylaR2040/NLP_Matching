@@ -1,6 +1,9 @@
 import 'package:flutter/services.dart';
+import 'api_service.dart';
 
-/// Loads and caches option data from text files in assets.
+/// Loads and caches option data.
+/// Primary source: wrapper backend API (/config/* endpoints).
+/// Fallback: bundled asset .txt files (used when backend is unreachable).
 class FormDataLoader {
   static final FormDataLoader _instance = FormDataLoader._internal();
   static const String _dataDir = 'assets/data';
@@ -35,6 +38,53 @@ class FormDataLoader {
     return value;
   }
 
+  List<String> _parseAsset(String data, {bool canonicalizeDegrees = false}) {
+    final values = data
+        .split('\n')
+        .map((line) => canonicalizeDegrees
+            ? _canonicalizeDegreeProgramLine(line)
+            : line.trim())
+        .where((line) => line.isNotEmpty)
+        .toSet()
+        .toList();
+    values.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return values;
+  }
+
+  /// Try fetching [configKey] from backend; on failure fall back to [assetFileName].
+  Future<List<String>> _loadWithFallback(
+    String configKey,
+    String assetFileName, {
+    bool canonicalizeDegrees = false,
+    List<String> defaultValues = const [],
+  }) async {
+    try {
+      final items = await ApiService.fetchConfigList(configKey);
+      if (items.isNotEmpty) {
+        if (canonicalizeDegrees) {
+          final normalized = items
+              .map(_canonicalizeDegreeProgramLine)
+              .where((s) => s.isNotEmpty)
+              .toSet()
+              .toList()
+            ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+          return normalized;
+        }
+        return items;
+      }
+    } catch (_) {
+      // Backend unreachable — fall through to asset.
+    }
+    try {
+      final data = await rootBundle.loadString(_dataPath(assetFileName));
+      return _parseAsset(data, canonicalizeDegrees: canonicalizeDegrees);
+    } catch (e) {
+      // ignore: avoid_print
+      print('FormDataLoader: error loading asset $assetFileName: $e');
+      return defaultValues;
+    }
+  }
+
   /// Loads all files required by the form before rendering options.
   Future<void> loadAll() async {
     await Future.wait([
@@ -47,144 +97,61 @@ class FormDataLoader {
     ]);
   }
 
-  /// Load NCSU organizations from text file
   Future<List<String>> loadNcsuOrgs() async {
     if (_ncsuOrgs != null) return _ncsuOrgs!;
-
-    try {
-      final data = await rootBundle.loadString(_dataPath('ncsu_orgs.txt'));
-      _ncsuOrgs = data
-          .split('\n')
-          .map((line) => line.trim())
-          .where((line) => line.isNotEmpty)
-          .toList();
-      _ncsuOrgs!.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-      print('Loaded ${_ncsuOrgs!.length} NCSU organizations');
-      return _ncsuOrgs!;
-    } catch (e) {
-      print('Error loading NCSU orgs: $e');
-      _ncsuOrgs = [];
-      return _ncsuOrgs!;
-    }
+    _ncsuOrgs = await _loadWithFallback('orgs', 'ncsu_orgs.txt');
+    return _ncsuOrgs!;
   }
 
-  /// Load undergraduate programs from text file
   Future<List<String>> loadUndergradPrograms() async {
     if (_undergradPrograms != null) return _undergradPrograms!;
-
+    // undergrad programs are not in the backend config yet — load from asset only.
     try {
-      final data = await rootBundle.loadString(
-        _dataPath('undergrad_programs.txt'),
-      );
-      _undergradPrograms = data
-          .split('\n')
-          .map((line) => _canonicalizeDegreeProgramLine(line))
-          .where((line) => line.isNotEmpty)
-          .toList();
-      _undergradPrograms!.sort(
-        (a, b) => a.toLowerCase().compareTo(b.toLowerCase()),
-      );
-      print('Loaded ${_undergradPrograms!.length} undergraduate programs');
-      return _undergradPrograms!;
+      final data = await rootBundle.loadString(_dataPath('undergrad_programs.txt'));
+      _undergradPrograms = _parseAsset(data, canonicalizeDegrees: true);
     } catch (e) {
-      print('Error loading undergrad programs: $e');
       _undergradPrograms = ['Computer Engineering', 'Electrical Engineering'];
-      return _undergradPrograms!;
     }
+    return _undergradPrograms!;
   }
 
-  /// Load graduate programs from text file
   Future<List<String>> loadGradPrograms() async {
     if (_gradPrograms != null) return _gradPrograms!;
-
-    try {
-      final data = await rootBundle.loadString(_dataPath('grad_programs.txt'));
-      _gradPrograms = data
-          .split('\n')
-          .map((line) => _canonicalizeDegreeProgramLine(line))
-          .where((line) => line.isNotEmpty)
-          .toList();
-      _gradPrograms!.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-      print('Loaded ${_gradPrograms!.length} graduate programs');
-      return _gradPrograms!;
-    } catch (e) {
-      print('Error loading grad programs: $e');
-      _gradPrograms = [
-        'Computer Engineering - MS',
-        'Electrical Engineering - MS',
-      ];
-      return _gradPrograms!;
-    }
+    _gradPrograms = await _loadWithFallback(
+      'grad-programs',
+      'grad_programs.txt',
+      canonicalizeDegrees: true,
+      defaultValues: ['Computer Engineering - MS', 'Electrical Engineering - MS'],
+    );
+    return _gradPrograms!;
   }
 
-  /// Load concentrations from text file
   Future<List<String>> loadConcentrations() async {
     if (_concentrations != null) return _concentrations!;
-    try {
-      final data = await rootBundle.loadString(_dataPath('concentrations.txt'));
-      _concentrations = data
-          .split('\n')
-          .map((line) => line.trim())
-          .where((line) => line.isNotEmpty)
-          .toList();
-      _concentrations!.sort(
-        (a, b) => a.toLowerCase().compareTo(b.toLowerCase()),
-      );
-      print('Loaded ${_concentrations!.length} concentrations');
-      return _concentrations!;
-    } catch (e) {
-      print('Error loading concentrations: $e');
-      _concentrations = [];
-      return _concentrations!;
-    }
+    _concentrations = await _loadWithFallback('concentrations', 'concentrations.txt');
+    return _concentrations!;
   }
 
-  /// Load ABM programs from text file
   Future<List<String>> loadAbmPrograms() async {
     if (_abmPrograms != null) return _abmPrograms!;
-
-    try {
-      final data = await rootBundle.loadString(_dataPath('abm_programs.txt'));
-      _abmPrograms = data
-          .split('\n')
-          .map((line) => _canonicalizeDegreeProgramLine(line))
-          .where((line) => line.isNotEmpty)
-          .toList();
-      _abmPrograms!.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-      print('Loaded ${_abmPrograms!.length} ABM programs');
-      return _abmPrograms!;
-    } catch (e) {
-      print('Error loading ABM programs: $e');
-      _abmPrograms = [
-        'Computer Engineering - ABM',
-        'Electrical Engineering - ABM',
-      ];
-      return _abmPrograms!;
-    }
+    _abmPrograms = await _loadWithFallback(
+      'abm-programs',
+      'abm_programs.txt',
+      canonicalizeDegrees: true,
+      defaultValues: ['Computer Engineering - ABM', 'Electrical Engineering - ABM'],
+    );
+    return _abmPrograms!;
   }
 
-  /// Load PhD programs from text file
   Future<List<String>> loadPhdPrograms() async {
     if (_phdPrograms != null) return _phdPrograms!;
-
-    try {
-      final data = await rootBundle.loadString(_dataPath('phd_programs.txt'));
-      _phdPrograms = data
-          .split('\n')
-          .map((line) => _canonicalizeDegreeProgramLine(line))
-          .where((line) => line.isNotEmpty)
-          .toList();
-      _phdPrograms!.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-      print('Loaded ${_phdPrograms!.length} PhD programs');
-      return _phdPrograms!;
-    } catch (e) {
-      print('Error loading PhD programs: $e');
-      _phdPrograms = [
-        'Computer Engineering - PhD',
-        'Electrical Engineering - PhD',
-      ];
-      return _phdPrograms!;
-    }
+    _phdPrograms = await _loadWithFallback(
+      'phd-programs',
+      'phd_programs.txt',
+      canonicalizeDegrees: true,
+      defaultValues: ['Computer Engineering - PhD', 'Electrical Engineering - PhD'],
+    );
+    return _phdPrograms!;
   }
 
   // Read-only getters (safe after loadAll completes).
