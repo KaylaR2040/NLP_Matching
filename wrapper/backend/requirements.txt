@@ -10,3 +10,7 @@ requests>=2.31.0
 beautifulsoup4>=4.12.0
 python-dotenv>=1.0.1
 psycopg[binary]>=3.2.1
+
+# NLP matching engine dependencies (required for /run_match via nlp_project subprocess)
+sentence-transformers>=2.7.0
+torch>=2.2.0
