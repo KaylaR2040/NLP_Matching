@@ -1507,6 +1507,100 @@ def _attach_mentor_capacity_metadata(result: Dict[str, Any], capacities: Dict[st
     result["mentor_capacity"] = summary
 
 
+# ---------------------------------------------------------------------------
+# Neon / Postgres helpers for config_lists and match_results tables.
+# These are no-ops when MENTOR_STORAGE_MODE != "postgres" or DATABASE_URL
+# is not set, so file-mode local dev continues to work unchanged.
+# ---------------------------------------------------------------------------
+
+def _read_config_list_db(list_key: str) -> Optional[str]:
+    """Return raw text from config_lists table, or None if unavailable."""
+    if MENTOR_STORAGE_MODE != "postgres" or not MENTOR_DATABASE_URL:
+        return None
+    try:
+        import psycopg
+        with psycopg.connect(MENTOR_DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT content FROM config_lists WHERE list_key = %s",
+                    (list_key,),
+                )
+                row = cur.fetchone()
+                return row[0] if row else None
+    except Exception as exc:
+        LOG.warning("config_list_db_read_failed key=%s error=%s", list_key, exc)
+        return None
+
+
+def _write_config_list_db(list_key: str, label: str, content: str, updated_by: str = "") -> None:
+    """Upsert a config list into the config_lists table."""
+    if MENTOR_STORAGE_MODE != "postgres" or not MENTOR_DATABASE_URL:
+        return
+    try:
+        import psycopg
+        with psycopg.connect(MENTOR_DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO config_lists (list_key, label, content, updated_at, updated_by)
+                    VALUES (%s, %s, %s, NOW(), %s)
+                    ON CONFLICT (list_key) DO UPDATE
+                        SET label      = EXCLUDED.label,
+                            content    = EXCLUDED.content,
+                            updated_at = NOW(),
+                            updated_by = EXCLUDED.updated_by
+                    """,
+                    (list_key, label, content, updated_by),
+                )
+            conn.commit()
+    except Exception as exc:
+        LOG.warning("config_list_db_write_failed key=%s error=%s", list_key, exc)
+
+
+def _config_list_to_array(text: str) -> List[str]:
+    """Convert newline-separated text to a sorted, deduplicated list of non-empty strings."""
+    return sorted({line.strip() for line in text.splitlines() if line.strip()})
+
+
+def _store_match_result_db(
+    *,
+    run_by: str,
+    mentee_source: str,
+    mentor_source: str,
+    result: Dict[str, Any],
+    stdout: str,
+) -> None:
+    """Persist a /run_match result to the match_results table."""
+    if MENTOR_STORAGE_MODE != "postgres" or not MENTOR_DATABASE_URL:
+        return
+    try:
+        import psycopg
+        summary = result.get("summary")
+        assignments = result.get("assignments")
+        top_ranked = result.get("top_ranked_pairs")
+        with psycopg.connect(MENTOR_DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO match_results
+                        (run_by, mentee_source, mentor_source, summary, assignments, top_ranked_pairs, stdout)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        run_by,
+                        mentee_source,
+                        mentor_source,
+                        json.dumps(summary),
+                        json.dumps(assignments),
+                        json.dumps(top_ranked),
+                        stdout[:10000] if stdout else "",  # cap stored stdout
+                    ),
+                )
+            conn.commit()
+    except Exception as exc:
+        LOG.warning("match_result_db_store_failed error=%s", exc)
+
+
 @app.get("/")
 def root() -> Dict[str, str]:
     return {
@@ -2160,6 +2254,15 @@ async def run_match(
             result = json.loads(output_json_path.read_text(encoding="utf-8"))
             if isinstance(result, dict):
                 _attach_mentor_capacity_metadata(result, mentor_capacities)
+
+            _store_match_result_db(
+                run_by=_session.username,
+                mentee_source=mentee_file.filename or "uploaded",
+                mentor_source=mentor_source,
+                result=result if isinstance(result, dict) else {},
+                stdout=completed.stdout or "",
+            )
+
             return {
                 "status": "ok",
                 "result": result,
@@ -2376,6 +2479,9 @@ def get_dev_matching_state(
 @app.get("/get_majors")
 def get_majors(_session: AuthSession = Depends(_require_auth(require_dev=True))) -> Dict[str, Any]:
     _audit_dev_action("get_majors", _session)
+    db_text = _read_config_list_db("grad_programs")
+    if db_text is not None:
+        return {"text": db_text, "file_key": "majors", "label": "Graduate Programs", "source": "database"}
     majors_path = Path(os.getenv("MAJORS_PATH", str(DEFAULT_MAJORS_PATH))).expanduser().resolve()
     entry = _virtual_dev_entry("Majors", majors_path)
     payload = _read_text_file(majors_path, entry=entry, prefer_remote=True)
@@ -2392,6 +2498,7 @@ def save_majors(
     _session: AuthSession = Depends(_require_auth(require_dev=True)),
 ) -> Dict[str, Any]:
     _audit_dev_action("save_majors", _session)
+    _write_config_list_db("grad_programs", "Graduate Programs (MS)", request.text, _session.username)
     majors_path = Path(os.getenv("MAJORS_PATH", str(DEFAULT_MAJORS_PATH))).expanduser().resolve()
     entry = _virtual_dev_entry("Majors", majors_path)
     _require_durable_repo_write(entry)
@@ -2415,6 +2522,9 @@ def save_majors(
 @app.get("/get_orgs")
 def get_orgs(_session: AuthSession = Depends(_require_auth(require_dev=True))) -> Dict[str, Any]:
     _audit_dev_action("get_orgs", _session)
+    db_text = _read_config_list_db("ncsu_orgs")
+    if db_text is not None:
+        return {"text": db_text, "file_key": "ncsu_orgs", "label": "NCSU Organizations", "source": "database"}
     return _dev_file_payload_for_key("ncsu_orgs", prefer_remote=True)
 
 
@@ -2424,6 +2534,7 @@ def save_orgs(
     _session: AuthSession = Depends(_require_auth(require_dev=True)),
 ) -> Dict[str, Any]:
     _audit_dev_action("save_orgs", _session)
+    _write_config_list_db("ncsu_orgs", "NCSU Organizations", request.text, _session.username)
     return _save_dev_file_text(
         file_key="ncsu_orgs",
         text=request.text,
@@ -2434,6 +2545,9 @@ def save_orgs(
 @app.get("/get_concentrations")
 def get_concentrations(_session: AuthSession = Depends(_require_auth(require_dev=True))) -> Dict[str, Any]:
     _audit_dev_action("get_concentrations", _session)
+    db_text = _read_config_list_db("concentrations")
+    if db_text is not None:
+        return {"text": db_text, "file_key": "concentrations", "label": "Concentrations", "source": "database"}
     return _dev_file_payload_for_key("concentrations", prefer_remote=True)
 
 
@@ -2443,6 +2557,7 @@ def save_concentrations(
     _session: AuthSession = Depends(_require_auth(require_dev=True)),
 ) -> Dict[str, Any]:
     _audit_dev_action("save_concentrations", _session)
+    _write_config_list_db("concentrations", "ECE Concentrations", request.text, _session.username)
     return _save_dev_file_text(
         file_key="concentrations",
         text=request.text,
@@ -2468,3 +2583,127 @@ def export_assignments(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers=headers,
     )
+
+
+# ---------------------------------------------------------------------------
+# Public config list endpoints (no auth required).
+# Used by flutter_mentor and flutter_mentee to fetch dynamic config lists
+# instead of loading static asset .txt files. Falls back to .txt file if
+# the database row does not exist yet.
+# ---------------------------------------------------------------------------
+
+_PUBLIC_CONFIG_KEYS: Dict[str, Tuple[str, Path]] = {
+    "orgs":          ("ncsu_orgs",      ORGS_PATH),
+    "concentrations": ("concentrations", CONCENTRATIONS_PATH),
+    "grad-programs": ("grad_programs",  GRAD_PROGRAMS_PATH),
+    "abm-programs":  ("abm_programs",   ABM_PROGRAMS_PATH),
+    "phd-programs":  ("phd_programs",   PHD_PROGRAMS_PATH),
+}
+
+
+@app.get("/config/{config_key}")
+def get_public_config(config_key: str) -> List[str]:
+    """Return a config list as a JSON array of strings. No authentication required."""
+    entry = _PUBLIC_CONFIG_KEYS.get(config_key)
+    if entry is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown config key '{config_key}'. "
+                   f"Valid keys: {sorted(_PUBLIC_CONFIG_KEYS)}",
+        )
+    db_key, file_path = entry
+    db_text = _read_config_list_db(db_key)
+    if db_text is not None:
+        return _config_list_to_array(db_text)
+    if file_path.exists():
+        return _config_list_to_array(file_path.read_text(encoding="utf-8"))
+    return []
+
+
+# ---------------------------------------------------------------------------
+# Match results history (dev-only).
+# ---------------------------------------------------------------------------
+
+@app.get("/match-results")
+def list_match_results(
+    limit: int = 20,
+    _session: AuthSession = Depends(_require_auth(require_dev=True)),
+) -> List[Dict[str, Any]]:
+    """Return recent /run_match results from the database (postgres mode only)."""
+    if MENTOR_STORAGE_MODE != "postgres" or not MENTOR_DATABASE_URL:
+        raise HTTPException(
+            status_code=503,
+            detail="Match results history requires WRAPPER_MENTOR_STORAGE_MODE=postgres and DATABASE_URL.",
+        )
+    try:
+        import psycopg
+        with psycopg.connect(MENTOR_DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, run_at, run_by, mentee_source, mentor_source, summary
+                    FROM match_results
+                    ORDER BY run_at DESC
+                    LIMIT %s
+                    """,
+                    (max(1, min(limit, 100)),),
+                )
+                rows = cur.fetchall()
+        return [
+            {
+                "id": row[0],
+                "run_at": row[1].isoformat() if row[1] else None,
+                "run_by": row[2],
+                "mentee_source": row[3],
+                "mentor_source": row[4],
+                "summary": row[5],
+            }
+            for row in rows
+        ]
+    except Exception as exc:
+        LOG.exception("match_results_list_failed error=%s", exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/match-results/{result_id}")
+def get_match_result(
+    result_id: int,
+    _session: AuthSession = Depends(_require_auth(require_dev=True)),
+) -> Dict[str, Any]:
+    """Return full detail for a single match result."""
+    if MENTOR_STORAGE_MODE != "postgres" or not MENTOR_DATABASE_URL:
+        raise HTTPException(
+            status_code=503,
+            detail="Match results history requires WRAPPER_MENTOR_STORAGE_MODE=postgres and DATABASE_URL.",
+        )
+    try:
+        import psycopg
+        with psycopg.connect(MENTOR_DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, run_at, run_by, mentee_source, mentor_source,
+                           summary, assignments, top_ranked_pairs, stdout
+                    FROM match_results WHERE id = %s
+                    """,
+                    (result_id,),
+                )
+                row = cur.fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"Match result {result_id} not found.")
+        return {
+            "id": row[0],
+            "run_at": row[1].isoformat() if row[1] else None,
+            "run_by": row[2],
+            "mentee_source": row[3],
+            "mentor_source": row[4],
+            "summary": row[5],
+            "assignments": row[6],
+            "top_ranked_pairs": row[7],
+            "stdout": row[8],
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        LOG.exception("match_result_get_failed id=%s error=%s", result_id, exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
