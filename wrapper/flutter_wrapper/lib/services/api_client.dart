@@ -666,4 +666,29 @@ class ApiClient {
     );
     return response.bodyBytes;
   }
+
+  Future<List<Map<String, dynamic>>> listMatchResults({int limit = 20}) async {
+    final uri = _uri('/match-results', queryParameters: {'limit': '$limit'});
+    final response = await _request(
+      method: 'GET',
+      uri: uri,
+      operation: 'list match results',
+    );
+    // Backend returns a JSON array, not an object, so decode directly.
+    final decoded = jsonDecode(response.body);
+    if (decoded is List) {
+      return decoded.whereType<Map<String, dynamic>>().toList();
+    }
+    return const [];
+  }
+
+  Future<Map<String, dynamic>> getMatchResult(int id) async {
+    final uri = _uri('/match-results/$id');
+    final response = await _request(
+      method: 'GET',
+      uri: uri,
+      operation: 'get match result',
+    );
+    return _decodeBody(response);
+  }
 }

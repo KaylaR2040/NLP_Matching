@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../constants/ncsu_theme.dart';
 import '../services/api_client.dart';
+import 'match_results_screen.dart';
 import 'mentor_manager_screen.dart';
 
 class _DevFileMeta {
@@ -484,6 +485,25 @@ class _DevDashboardScreenState extends State<DevDashboardScreen> {
           title: const Text('Dev Dashboard'),
           foregroundColor: NCSUColors.wolfpackWhite,
           actions: [
+            TextButton.icon(
+              onPressed: _busy
+                  ? null
+                  : () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => MatchResultsScreen(
+                            apiClient: widget.apiClient,
+                            onAuthExpired: widget.onAuthExpired,
+                          ),
+                        ),
+                      );
+                    },
+              icon: const Icon(Icons.history, color: Colors.white),
+              label: const Text(
+                'Match History',
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
             TextButton.icon(
               onPressed: _busy
                   ? null
