@@ -1,0 +1,60 @@
+services:
+  - type: web
+    name: nlp-mentor-backend
+    runtime: docker
+    # Dockerfile lives inside wrapper/backend/; build context is that directory.
+    # wrapper/backend/nlp_project/ is already present (copied by prepare_vercel_bundle.py).
+    dockerfilePath: wrapper/backend/Dockerfile
+    dockerContext: wrapper/backend
+    # "starter" plan (512 MB RAM) is the minimum that can load PyTorch + sentence-transformers.
+    # Upgrade to "standard" (2 GB) if you see OOM kills during /run_match.
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      # ---------- NLP project path (baked into the Docker image) ----------
+      - key: WRAPPER_NLP_PROJECT_DIR
+        value: /app/nlp_project
+
+      # ---------- Storage (postgres = Neon) ----------
+      - key: WRAPPER_MENTOR_STORAGE_MODE
+        value: postgres
+
+      # ---------- Timeouts (no 60-second Vercel limit on Render) ----------
+      - key: WRAPPER_MATCH_TIMEOUT_SECONDS
+        value: "270"
+      - key: WRAPPER_SCRIPT_TIMEOUT_SECONDS
+        value: "180"
+
+      # ---------- HTTPS enforcement ----------
+      - key: WRAPPER_REQUIRE_HTTPS
+        value: "true"
+
+      # ---------- CORS: all Flutter app origins ----------
+      - key: WRAPPER_ALLOWED_ORIGINS
+        value: "https://mentorform.vercel.app,https://menteeform.vercel.app,https://matching-web-ten.vercel.app"
+
+      # =================================================================
+      # The following secrets must be set manually in the Render dashboard
+      # (Environment → Secret Files / Environment Variables) and are NOT
+      # committed here to avoid leaking credentials.
+      # =================================================================
+      #
+      # DATABASE_URL            — Neon Postgres connection string
+      #                           (postgresql://user:pass@host/dbname?sslmode=require)
+      #
+      # WRAPPER_TOKEN_SECRET    — 64-char hex string for signing auth tokens
+      #                           Generate: python -c "import secrets; print(secrets.token_hex(32))"
+      #
+      # WRAPPER_USER_USERNAME   — Login username for regular users
+      # WRAPPER_USER_PASSWORD_HASH
+      #                         — PBKDF2 hash. Generate:
+      #                           python wrapper/backend/scripts/generate_password_hash.py
+      #
+      # WRAPPER_DEV_USERNAME    — Login username for dev/admin users
+      # WRAPPER_DEV_PASSWORD_HASH
+      #                         — PBKDF2 hash (same script as above)
+      #
+      # Optional:
+      # WRAPPER_LINKEDIN_PROXYCURL_API_KEY
+      # WRAPPER_GITHUB_SYNC_TOKEN
+      # WRAPPER_GITHUB_SYNC_REPO
