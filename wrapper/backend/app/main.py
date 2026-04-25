@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import csv
 from collections import defaultdict, deque
+from datetime import datetime, timezone
 import hashlib
 import hmac
 import json
@@ -14,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from uuid import uuid4
 from dataclasses import dataclass
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -53,6 +55,14 @@ from .linkedin_enrichment import (
     normalize_linkedin_profile_url,
 )
 from .github_sync import GitHubSyncConfig, GitHubSyncService
+from .google_form_forwarder import (
+    MENTEE_FIELD_ORDER,
+    MENTEE_PREFILLED_LINK,
+    MENTOR_FIELD_ORDER,
+    MENTOR_PREFILLED_LINK,
+    build_google_form_config,
+    submit_to_google_form,
+)
 from .mentor_store import (
     DEFAULT_MENTOR_BACKUP_DIR,
     DEFAULT_MENTOR_STORE_PATH,
@@ -105,10 +115,11 @@ PHD_PROGRAMS_PATH = Path(
 )
 PHD_PROGRAMS_PATH = _resolve_from_backend(str(PHD_PROGRAMS_PATH))
 DEFAULT_MAJORS_PATH = GRAD_PROGRAMS_PATH
-# On Vercel, /var/task (BACKEND_ROOT) is read-only.  Write backups to /tmp instead.
+# In serverless/container runtimes (Vercel or Cloud Run), write backups to /tmp.
+# Cloud Run sets K_SERVICE; Vercel sets VERCEL.
 _DEFAULT_BACKUP_DIR = (
     Path("/tmp/nlp_matching_runtime/dev_file_backups")
-    if os.getenv("VERCEL", "").strip()
+    if (os.getenv("VERCEL", "").strip() or os.getenv("K_SERVICE", "").strip())
     else BACKEND_ROOT / "data" / "dev_file_backups"
 )
 DEV_BACKUP_DIR = Path(
@@ -142,16 +153,16 @@ else:
     logging.getLogger().setLevel(LOG_LEVEL)
 
 TOKEN_TTL_SECONDS = int(os.getenv("WRAPPER_TOKEN_TTL_SECONDS", "3600"))
-# Secret used to sign auth tokens. Must be set in production for tokens to survive
-# process restarts (Vercel cold starts). Generate with: python -c "import secrets; print(secrets.token_hex(32))"
+# Secret used to sign auth tokens. Must be set in production so tokens survive
+# container restarts. Generate with: python -c "import secrets; print(secrets.token_hex(32))"
 _TOKEN_SECRET_FROM_ENV = os.getenv("WRAPPER_TOKEN_SECRET", "").strip()
-# Vercel free-tier serverless limit is 60s; use 50s to leave a safety margin.
-# Increase (e.g. 270) when deploying on a platform with a longer timeout.
-MATCH_TIMEOUT_SECONDS = int(os.getenv("WRAPPER_MATCH_TIMEOUT_SECONDS", "50"))
+# Matching timeout in seconds. Cloud Run recommendation is 270.
+MATCH_TIMEOUT_SECONDS = int(os.getenv("WRAPPER_MATCH_TIMEOUT_SECONDS", "270"))
 # Timeout for dev-file update scripts (pull_orgs, pull_concentrations, etc.).
-# Must be lower than the Vercel platform timeout so the function can return a proper
-# HTTP 504 instead of having the platform drop the TCP connection (→ "Load failed" on client).
-SCRIPT_TIMEOUT_SECONDS = int(os.getenv("WRAPPER_SCRIPT_TIMEOUT_SECONDS", "45"))
+SCRIPT_TIMEOUT_SECONDS = int(os.getenv("WRAPPER_SCRIPT_TIMEOUT_SECONDS", "180"))
+GOOGLE_FORM_TIMEOUT_SECONDS = float(
+    os.getenv("WRAPPER_GOOGLE_FORM_TIMEOUT_SECONDS", "20")
+)
 MAX_SESSIONS_PER_USER = int(os.getenv("WRAPPER_MAX_SESSIONS_PER_USER", "5"))
 REQUIRE_HTTPS = os.getenv("WRAPPER_REQUIRE_HTTPS", "false").strip().lower() in {
     "1",
@@ -204,7 +215,9 @@ GITHUB_SYNC_BRANCH = os.getenv("WRAPPER_GITHUB_SYNC_BRANCH", "main").strip() or 
 GITHUB_SYNC_TIMEOUT_SECONDS = float(
     os.getenv("WRAPPER_GITHUB_SYNC_TIMEOUT_SECONDS", "20")
 )
-IS_VERCEL = os.getenv("VERCEL", "").strip() != ""
+# True on Vercel (VERCEL env set) and on Cloud Run (K_SERVICE env set).
+IS_SERVERLESS = bool(os.getenv("VERCEL", "").strip() or os.getenv("K_SERVICE", "").strip())
+IS_VERCEL = IS_SERVERLESS  # alias — all downstream references unchanged
 
 
 def _parse_allowed_origins(raw_value: str) -> List[str]:
@@ -300,7 +313,7 @@ else:
     TOKEN_SECRET = secrets.token_hex(32)
     LOG.warning(
         "WRAPPER_TOKEN_SECRET is not set. Auth tokens will not survive process restarts "
-        "(Vercel cold starts will invalidate all sessions). "
+        "(instance recycle/cold start will invalidate all sessions). "
         "Set WRAPPER_TOKEN_SECRET in your environment to fix this."
     )
 try:
@@ -1601,6 +1614,53 @@ def _store_match_result_db(
         LOG.warning("match_result_db_store_failed error=%s", exc)
 
 
+def _iso_timestamp_utc() -> str:
+    return (
+        datetime.now(timezone.utc)
+        .isoformat(timespec="milliseconds")
+        .replace("+00:00", "Z")
+    )
+
+
+def _derive_submission_id(data: Dict[str, Any]) -> str:
+    for key in ("submissionId", "id"):
+        value = data.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return str(uuid4())
+
+
+def _derive_submitted_at(data: Dict[str, Any]) -> str:
+    for key in ("submittedAt", "submitted_at"):
+        value = data.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return _iso_timestamp_utc()
+
+
+def _build_degrees_summary(raw_degrees: Any) -> str:
+    if not isinstance(raw_degrees, list):
+        return ""
+
+    parts: List[str] = []
+    for degree in raw_degrees:
+        if not isinstance(degree, dict):
+            continue
+        level = degree.get("level") if isinstance(degree.get("level"), str) else ""
+        program = degree.get("program") if isinstance(degree.get("program"), str) else ""
+        graduation_year = (
+            degree.get("graduationYear")
+            if isinstance(degree.get("graduationYear"), str)
+            else ""
+        )
+        core = " ".join(item for item in (level, program) if item)
+        if not core:
+            continue
+        parts.append(f"{core} ({graduation_year})" if graduation_year else core)
+
+    return "; ".join(parts)
+
+
 @app.get("/")
 def root() -> Dict[str, str]:
     return {
@@ -1623,6 +1683,107 @@ def api_root() -> Dict[str, str]:
 @app.get("/api/health")
 def api_health() -> Dict[str, str]:
     return health()
+
+
+@app.get("/public/forms/mentor")
+def public_mentor_form_readonly_probe() -> List[Any]:
+    return []
+
+
+@app.post("/public/forms/mentor")
+def submit_public_mentor_form(payload: Dict[str, Any]) -> Dict[str, Any]:
+    data = payload if isinstance(payload, dict) else {}
+    submission_id = _derive_submission_id(data)
+    submitted_at = _derive_submitted_at(data)
+
+    mentor_record: Dict[str, Any] = dict(data)
+    mentor_record["id"] = submission_id
+    mentor_record["submissionId"] = submission_id
+    mentor_record["submittedAt"] = submitted_at
+    mentor_record["submitted_at"] = submitted_at
+    mentor_record["degreesSummary"] = _build_degrees_summary(data.get("degrees"))
+
+    try:
+        prefilled_link = (
+            os.getenv("MENTOR_GOOGLE_FORM_PREFILLED_LINK", "").strip()
+            or MENTOR_PREFILLED_LINK
+        )
+        config = build_google_form_config(
+            form_name="mentor",
+            env_prefix="MENTOR_GOOGLE_FORM",
+            prefilled_link=prefilled_link,
+            field_order=MENTOR_FIELD_ORDER,
+            default_enabled=True,
+            default_required=True,
+        )
+        google_form = submit_to_google_form(
+            config,
+            mentor_record,
+            timeout_seconds=GOOGLE_FORM_TIMEOUT_SECONDS,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Google Form submission failed: {exc}",
+        ) from exc
+
+    return {
+        "success": True,
+        "message": "Mentor application submitted successfully",
+        "mentor_id": submission_id,
+        "data": mentor_record,
+        "google_form": google_form,
+    }
+
+
+@app.get("/public/forms/mentee")
+def public_mentee_form_readonly_probe() -> List[Any]:
+    return []
+
+
+@app.post("/public/forms/mentee")
+def submit_public_mentee_form(payload: Dict[str, Any]) -> Dict[str, Any]:
+    data = payload if isinstance(payload, dict) else {}
+    submission_id = _derive_submission_id(data)
+    submitted_at = _derive_submitted_at(data)
+
+    mentee_record: Dict[str, Any] = dict(data)
+    mentee_record["id"] = submission_id
+    mentee_record["submissionId"] = submission_id
+    mentee_record["submittedAt"] = submitted_at
+    mentee_record["submitted_at"] = submitted_at
+
+    try:
+        prefilled_link = (
+            os.getenv("MENTEE_GOOGLE_FORM_PREFILLED_LINK", "").strip()
+            or MENTEE_PREFILLED_LINK
+        )
+        config = build_google_form_config(
+            form_name="mentee",
+            env_prefix="MENTEE_GOOGLE_FORM",
+            prefilled_link=prefilled_link,
+            field_order=MENTEE_FIELD_ORDER,
+            default_enabled=True,
+            default_required=True,
+        )
+        google_form = submit_to_google_form(
+            config,
+            mentee_record,
+            timeout_seconds=GOOGLE_FORM_TIMEOUT_SECONDS,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Google Form submission failed: {exc}",
+        ) from exc
+
+    return {
+        "success": True,
+        "message": "Mentee application submitted successfully",
+        "mentee_id": submission_id,
+        "data": mentee_record,
+        "google_form": google_form,
+    }
 
 
 @app.post("/login", response_model=LoginResponse)
@@ -2232,7 +2393,7 @@ async def run_match(
                         "message": (
                             f"Matching engine timed out after {MATCH_TIMEOUT_SECONDS}s. "
                             "For large datasets, run locally or set WRAPPER_MATCH_TIMEOUT_SECONDS "
-                            "to a higher value (Vercel Pro allows up to 300s)."
+                            "to a higher value that fits your deployment timeout."
                         ),
                         "timeout_seconds": MATCH_TIMEOUT_SECONDS,
                     },
