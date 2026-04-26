@@ -1,0 +1,73 @@
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+substitutions:
+  _REGION: us-central1
+  _SERVICE_NAME: nlp-mentor-backend
+  _AR_REPO: cloud-run-images
+  _NON_SECRET_ENV_VARS: '^##^WRAPPER_MENTOR_STORAGE_MODE=postgres##WRAPPER_NLP_PROJECT_DIR=/app/nlp_project##WRAPPER_MATCH_TIMEOUT_SECONDS=270##WRAPPER_SCRIPT_TIMEOUT_SECONDS=180##WRAPPER_REQUIRE_HTTPS=true##WRAPPER_ALLOWED_ORIGINS=https://admin.example.com,https://mentor.example.com,https://mentee.example.com'
+  _SECRET_ENV_VARS: 'DATABASE_URL=DATABASE_URL:latest,WRAPPER_TOKEN_SECRET=WRAPPER_TOKEN_SECRET:latest,WRAPPER_USER_USERNAME=WRAPPER_USER_USERNAME:latest,WRAPPER_USER_PASSWORD_HASH=WRAPPER_USER_PASSWORD_HASH:latest,WRAPPER_DEV_USERNAME=WRAPPER_DEV_USERNAME:latest,WRAPPER_DEV_PASSWORD_HASH=WRAPPER_DEV_PASSWORD_HASH:latest'
+
+steps:
+  - id: ensure-artifact-repo
+    name: gcr.io/cloud-builders/gcloud
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        gcloud artifacts repositories describe "${_AR_REPO}" \
+          --location "${_REGION}" \
+          --project "$PROJECT_ID" >/dev/null 2>&1 || \
+        gcloud artifacts repositories create "${_AR_REPO}" \
+          --repository-format docker \
+          --location "${_REGION}" \
+          --description "Container images for Cloud Run deployments" \
+          --project "$PROJECT_ID"
+
+  - id: docker-build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - wrapper/backend/Dockerfile
+      - -t
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_SERVICE_NAME}:$COMMIT_SHA'
+      - .
+
+  - id: docker-push
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_SERVICE_NAME}:$COMMIT_SHA'
+
+  - id: cloud-run-deploy
+    name: gcr.io/cloud-builders/gcloud
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        DEPLOY_ARGS=(
+          run deploy "${_SERVICE_NAME}"
+          --project "$PROJECT_ID"
+          --region "${_REGION}"
+          --platform managed
+          --image "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_SERVICE_NAME}:$COMMIT_SHA"
+          --allow-unauthenticated
+          --ingress all
+          --cpu 1
+          --memory 4Gi
+          --concurrency 1
+          --timeout 300
+          --min-instances 0
+          --max-instances 3
+          --set-env-vars "${_NON_SECRET_ENV_VARS}"
+        )
+
+        if [[ -n "${_SECRET_ENV_VARS}" ]]; then
+          DEPLOY_ARGS+=(--set-secrets "${_SECRET_ENV_VARS}")
+        fi
+
+        gcloud "${DEPLOY_ARGS[@]}"
+
+images:
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_SERVICE_NAME}:$COMMIT_SHA'

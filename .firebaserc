@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "nlp-mentor-2026-55d28"
+  },
+  "targets": {
+    "nlp-mentor-2026-55d28": {
+      "hosting": {
+        "admin": ["nlp-admin"],
+        "mentor": ["nlp-mentor"],
+        "mentee": ["nlp-mentee"]
+      }
+    }
+  },
+  "etags": {}
+}

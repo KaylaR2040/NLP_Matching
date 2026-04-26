@@ -1,0 +1,61 @@
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+substitutions:
+  _FIREBASE_PROJECT_ID: replace-with-your-firebase-project-id
+  _WRAPPER_API_BASE_URL: https://api.example.com
+  _BACKEND_API_BASE_URL: https://api.example.com
+
+steps:
+  - id: build-admin
+    name: ghcr.io/cirruslabs/flutter:stable
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        cd wrapper/flutter_wrapper
+        flutter config --enable-web
+        flutter pub get
+        flutter build web --release --dart-define=WRAPPER_API_BASE_URL=${_WRAPPER_API_BASE_URL}
+
+  - id: build-mentor
+    name: ghcr.io/cirruslabs/flutter:stable
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        cd flutter_mentor
+        flutter config --enable-web
+        flutter pub get
+        flutter build web --release --dart-define=BACKEND_API_BASE_URL=${_BACKEND_API_BASE_URL}
+
+  - id: build-mentee
+    name: ghcr.io/cirruslabs/flutter:stable
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        cd flutter_mentee
+        flutter config --enable-web
+        flutter pub get
+        flutter build web --release --dart-define=BACKEND_API_BASE_URL=${_BACKEND_API_BASE_URL}
+
+  - id: firebase-deploy
+    name: node:20
+    entrypoint: bash
+    secretEnv:
+      - FIREBASE_CI_TOKEN
+    args:
+      - -ceu
+      - |
+        npm install -g firebase-tools
+        firebase deploy \
+          --project "${_FIREBASE_PROJECT_ID}" \
+          --only hosting:admin,hosting:mentor,hosting:mentee \
+          --token "$FIREBASE_CI_TOKEN" \
+          --non-interactive
+
+availableSecrets:
+  secretManager:
+    - versionName: projects/$PROJECT_ID/secrets/FIREBASE_CI_TOKEN/versions/latest
+      env: FIREBASE_CI_TOKEN

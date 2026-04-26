@@ -1,0 +1,24 @@
+.git
+.gitignore
+**/.DS_Store
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/.pytest_cache
+**/.mypy_cache
+**/.venv
+**/build
+**/.dart_tool
+**/.flutter_sdk
+**/.idea
+**/.vscode
+
+# Local secrets / env files
+.env
+.env.*
+wrapper/backend/.env
+wrapper/backend/.env.*
+
+# Frontend deployment artifacts
+.firebase
+firebase-debug.log*

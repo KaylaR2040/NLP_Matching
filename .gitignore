@@ -24,9 +24,11 @@ build/
 .packages
 .pub-cache/
 .pub/
+.flutter_sdk/
 
-# VERCEL
-.vercel/
+# FIREBASE
+.firebase/
+firebase-debug.log*
 
 # USER DATA
 /data/*

@@ -1,5 +1,5 @@
 #
-# Repo-root deployment manifest for the Vercel entrypoint in `api/index.py`.
+# Repo-root backend dependencies mirror.
 # Keep this file in sync with `wrapper/backend/requirements.txt`.
 #
 fastapi>=0.115.0

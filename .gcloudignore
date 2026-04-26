@@ -1,0 +1,19 @@
+# Files to exclude from gcloud builds submit upload.
+# Keeps the source upload small and fast.
+
+.git
+.DS_Store
+**/.DS_Store
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/.dart_tool
+**/build
+**/.venv
+**/node_modules
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+nlp_project/output
+nlp_project/state
+wrapper/backend/data/mentors/backups
+wrapper/backend/nlp_project
