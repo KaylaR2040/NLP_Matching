@@ -5,7 +5,7 @@ class ApiRuntimeConfig {
       String.fromEnvironment('WRAPPER_API_BASE_URL', defaultValue: '');
   static const String _defaultHostedBaseUrl = String.fromEnvironment(
     'WRAPPER_DEFAULT_API_BASE_URL',
-    defaultValue: 'https://nlpmatchbackend.vercel.app',
+    defaultValue: 'https://api.example.com',
   );
 
   static String resolveBaseUrl() {

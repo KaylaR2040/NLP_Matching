@@ -118,6 +118,9 @@ class _DevDashboardScreenState extends State<DevDashboardScreen> {
   String _describeLoadSource(Map<String, dynamic> response) {
     final contentSource = (response['content_source'] ?? '').toString();
     final durableSource = (response['durable_source'] ?? '').toString();
+    if (contentSource == 'database' || durableSource == 'database') {
+      return 'Loaded from database.';
+    }
     if (contentSource == 'github') {
       return 'Loaded from GitHub.';
     }
@@ -133,10 +136,15 @@ class _DevDashboardScreenState extends State<DevDashboardScreen> {
     if (durableSource == 'github') {
       return 'Loaded bundled copy. Durable source is GitHub.';
     }
-    return 'Loaded repo bundle copy.';
+    return 'Loaded from file.';
   }
 
   String _describeSaveResult(Map<String, dynamic> response, String label) {
+    final durableSource = (response['durable_source'] ?? '').toString();
+    final contentSource = (response['content_source'] ?? '').toString();
+    if (durableSource == 'database' || contentSource == 'database') {
+      return 'Saved $label to database.';
+    }
     final githubSync =
         (response['github_sync'] as Map<String, dynamic>? ?? const {});
     final syncStatus = (githubSync['status'] ?? '').toString();
@@ -158,16 +166,18 @@ class _DevDashboardScreenState extends State<DevDashboardScreen> {
 
   String _durableSourceLabel(String durableSource) {
     switch (durableSource) {
+      case 'database':
+        return 'Saved to database';
       case 'github':
-        return 'Durable source: GitHub';
+        return 'Saved to GitHub';
       case 'local_only':
-        return 'Durable source: local only';
+        return 'Saved to local file';
       case 'runtime_only':
-        return 'Durable source: runtime only';
+        return 'Temporary — lost on restart';
       case 'not_configured':
-        return 'Durable source: not configured';
+        return 'Not saved — enable GitHub sync or use database mode';
       default:
-        return 'Durable source: $durableSource';
+        return durableSource.isNotEmpty ? 'Storage: $durableSource' : '';
     }
   }
 
@@ -566,23 +576,33 @@ class _DevDashboardScreenState extends State<DevDashboardScreen> {
                         (_busy || selected == null) ? null : _revertLastSaved,
                     child: const Text('Revert To Last Backup'),
                   ),
-                  ElevatedButton(
-                    onPressed: (_busy || !_dirty || selected == null)
-                        ? null
-                        : _saveCurrentFile,
-                    child: const Text('Save'),
+                  Tooltip(
+                    message: selected != null &&
+                            selected.durableSource == 'not_configured'
+                        ? 'Cannot save: enable GitHub sync or use database mode'
+                        : '',
+                    child: ElevatedButton(
+                      onPressed: (_busy ||
+                              !_dirty ||
+                              selected == null ||
+                              selected.durableSource == 'not_configured')
+                          ? null
+                          : _saveCurrentFile,
+                      child: const Text('Save'),
+                    ),
                   ),
                   if (selected?.hasUpdateScript == true)
-                    ElevatedButton(
+                    ElevatedButton.icon(
                       onPressed: _busy ? null : _runUpdateScript,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: NCSUColors.bioIndigo,
                         foregroundColor: Colors.white,
                       ),
-                      child: Text(
+                      icon: const Icon(Icons.sync),
+                      label: Text(
                         selected!.fileKey == 'ncsu_orgs'
-                            ? 'Run pullorgs'
-                            : 'Run pullconcentration',
+                            ? 'Refresh Organizations'
+                            : 'Refresh Concentrations',
                       ),
                     ),
                 ],
@@ -608,7 +628,9 @@ class _DevDashboardScreenState extends State<DevDashboardScreen> {
               const SizedBox(height: 12),
               if (selected != null)
                 Text(
-                  '${selected.path} • ${selected.lineCount} non-empty lines • ${_durableSourceLabel(selected.durableSource)}',
+                  selected.durableSource == 'database'
+                      ? '${selected.lineCount} items • ${_durableSourceLabel(selected.durableSource)}'
+                      : '${selected.path.isNotEmpty ? selected.path : selected.label} • ${selected.lineCount} items • ${_durableSourceLabel(selected.durableSource)}',
                   style: Theme.of(context)
                       .textTheme
                       .bodySmall

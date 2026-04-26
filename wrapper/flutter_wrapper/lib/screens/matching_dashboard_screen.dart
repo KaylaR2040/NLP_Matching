@@ -1,4 +1,5 @@
 // ignore_for_file: avoid_web_libraries_in_flutter, deprecated_member_use
+import 'dart:async';
 import 'dart:html' as html;
 import 'dart:math' as math;
 
@@ -33,6 +34,10 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
   SelectedFile? _menteeFile;
 
   bool _loading = false;
+  int _elapsedSeconds = 0;
+  Timer? _progressTimer;
+  // Stable display order set once after each match run — never re-sorted during dragging.
+  List<String> _stableMentorOrder = const [];
   String _status =
       'Upload a mentee file to begin. Mentor data is sourced from Mentor Manager.';
 
@@ -48,21 +53,16 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
   String? _selectedExclusionMentorId;
 
   List<MentorCardState> get _mentorCards {
+    // Use the stable order set at run time — cards don't jump around during dragging.
+    if (_stableMentorOrder.isNotEmpty) {
+      return _stableMentorOrder
+          .where(_mentorsById.containsKey)
+          .map((id) => _mentorsById[id]!)
+          .toList();
+    }
+    // Fallback sort before first run.
     final list = _mentorsById.values.toList();
-    list.sort((a, b) {
-      final aHasMatches = a.menteeIds.isNotEmpty;
-      final bHasMatches = b.menteeIds.isNotEmpty;
-      if (aHasMatches != bHasMatches) {
-        return aHasMatches ? -1 : 1;
-      }
-
-      final sizeCompare = b.menteeIds.length.compareTo(a.menteeIds.length);
-      if (sizeCompare != 0) {
-        return sizeCompare;
-      }
-
-      return a.mentorName.toLowerCase().compareTo(b.mentorName.toLowerCase());
-    });
+    list.sort((a, b) => a.mentorName.toLowerCase().compareTo(b.mentorName.toLowerCase()));
     return list;
   }
 
@@ -102,7 +102,14 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
 
     setState(() {
       _loading = true;
+      _elapsedSeconds = 0;
       _status = rerun ? 'Rerunning matching...' : 'Running matching...';
+    });
+
+    _progressTimer?.cancel();
+    _progressTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() => _elapsedSeconds++);
     });
 
     try {
@@ -133,6 +140,8 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
     } catch (e) {
       setState(() => _status = 'Run failed: $e');
     } finally {
+      _progressTimer?.cancel();
+      _progressTimer = null;
       setState(() => _loading = false);
     }
   }
@@ -208,6 +217,19 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
         _unmatchedMenteeIds.add(menteeId);
       }
     }
+
+    // Set stable display order once: assigned mentors first (by count desc), then alphabetically.
+    // This order never changes during the session so cards don't jump when mentees are moved.
+    final ordered = _mentorsById.values.toList()
+      ..sort((a, b) {
+        final aHas = a.menteeIds.isNotEmpty ? 0 : 1;
+        final bHas = b.menteeIds.isNotEmpty ? 0 : 1;
+        if (aHas != bHas) return aHas - bHas;
+        final sizeDiff = b.menteeIds.length - a.menteeIds.length;
+        if (sizeDiff != 0) return sizeDiff;
+        return a.mentorName.toLowerCase().compareTo(b.mentorName.toLowerCase());
+      });
+    _stableMentorOrder = ordered.map((m) => m.mentorId).toList();
   }
 
   void _applyMentorCapacityFromRow(dynamic row) {
@@ -341,13 +363,35 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
   }
 
   Future<void> _resetAndRunFromScratch() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reset + Run From Scratch'),
+        content: const Text(
+          'This clears all locked pairs, rejected pairs, and exclusions, '
+          'then runs a fresh match.\n\nAny manual assignments will be lost.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Reset & Run'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
     setState(() {
       _lockedPairs.clear();
       _rejectedPairs.clear();
       _exclusionPairs.clear();
       _selectedExclusionMenteeId = null;
       _selectedExclusionMentorId = null;
-      _status = 'Reset constraints. Running from scratch...';
+      _status = 'Reset all constraints. Running fresh match...';
     });
     await _runMatch(rerun: false);
   }
@@ -1015,24 +1059,33 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
                       runSpacing: 10,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
+                        // ── Mentee file source ──────────────────────────
                         OutlinedButton.icon(
                           onPressed: _loading ? null : _pickMenteeFile,
                           icon: const Icon(Icons.upload_file),
                           label: Text(_menteeFile == null
-                              ? 'Upload Mentee File'
-                              : 'Mentee: ${_menteeFile!.filename}'),
+                              ? 'Upload Mentee CSV/XLSX'
+                              : 'Mentees: ${_menteeFile!.filename}'),
                         ),
+                        // ── Mentor source chip (read-only status) ────────
                         const Chip(
                           avatar: Icon(Icons.storage_outlined, size: 16),
-                          label: Text('Mentors source: Mentor Manager'),
+                          label: Text('Mentors: database'),
                         ),
+                        const SizedBox(width: 4),
+                        // ── Primary action ───────────────────────────────
                         ElevatedButton.icon(
                           onPressed: (_loading || _menteeFile == null)
                               ? null
                               : () => _runMatch(rerun: false),
                           icon: const Icon(Icons.play_arrow),
                           label: Text(_loading ? 'Running...' : 'Run Matching'),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 12),
+                          ),
                         ),
+                        // ── Secondary actions ────────────────────────────
                         OutlinedButton.icon(
                           onPressed: (_loading || _menteeFile == null)
                               ? null
@@ -1041,16 +1094,20 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
                           label: const Text('Rerun'),
                         ),
                         OutlinedButton.icon(
+                          onPressed: _loading ? null : _exportCurrentBoard,
+                          icon: const Icon(Icons.download),
+                          label: const Text('Download XLSX'),
+                        ),
+                        // ── Destructive action ───────────────────────────
+                        TextButton.icon(
                           onPressed: (_loading || _menteeFile == null)
                               ? null
                               : _resetAndRunFromScratch,
-                          icon: const Icon(Icons.restart_alt),
-                          label: const Text('Reset + Run From Scratch'),
-                        ),
-                        OutlinedButton.icon(
-                          onPressed: _loading ? null : _exportCurrentBoard,
-                          icon: const Icon(Icons.download),
-                          label: const Text('Download Final XLSX'),
+                          icon: const Icon(Icons.restart_alt, size: 18),
+                          label: const Text('Reset & Rerun'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.red.shade700,
+                          ),
                         ),
                       ],
                     ),
@@ -1059,10 +1116,19 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
                 const SizedBox(height: 8),
                 _buildExclusionBuilder(),
                 const SizedBox(height: 8),
+                if (_loading) ...[
+                  LinearProgressIndicator(
+                    backgroundColor: Colors.grey.shade200,
+                    color: NCSUColors.wolfpackRed,
+                  ),
+                  const SizedBox(height: 6),
+                ],
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    _status,
+                    _loading
+                        ? '$_status (${_elapsedSeconds}s elapsed — typically 20–60s)'
+                        : _status,
                     style: Theme.of(context)
                         .textTheme
                         .bodyMedium
