@@ -11,7 +11,7 @@ from typing import Iterable, List, Sequence
 from .constants import DOMAIN_STOP_WORDS
 
 
-MODEL_NAME = "all-mpnet-base-v2"
+MODEL_NAME = "all-MiniLM-L6-v2"
 FALLBACK_EMBEDDING_DIM = 256
 _MODEL = None
 _MODEL_FAILED = False

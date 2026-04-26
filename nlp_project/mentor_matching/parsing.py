@@ -118,7 +118,9 @@ def _normalize_headers(row: Dict[str, str]) -> Dict[str, str]:
     normalized: Dict[str, str] = {}
     for key, value in row.items():
         normalized[key] = value
-        normalized[key.strip().lower()] = value
+        lower = key.strip().lower()
+        normalized[lower] = value
+        normalized[lower.replace("_", " ")] = value
     return normalized
 
 

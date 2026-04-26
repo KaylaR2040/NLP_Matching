@@ -205,6 +205,7 @@ class PairScore:
     match_score: float
     match_band: str = ""
     match_reason: str = ""
+    match_type: str = ""  # exact | adjacent | broad | best_available
     locked: bool = False
 
     def to_dict(self) -> Dict[str, object]:
@@ -220,5 +221,6 @@ class PairScore:
             "match_percent": round(self.match_score * 100, 2),
             "match_band": self.match_band,
             "match_reason": self.match_reason,
+            "match_type": self.match_type,
             "locked": self.locked,
         }

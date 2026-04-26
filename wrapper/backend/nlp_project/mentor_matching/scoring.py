@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import re
-from typing import Dict, Sequence, Set, Tuple
+from typing import Dict, Optional, Sequence, Set, Tuple
 
 from .constants import (
+    ADJACENCY_PENALTY,
     CORE_MATCH_SHARE,
     DEFAULT_BASE_WEIGHTS,
     DEGREE_EXACT_MULTI_BONUS_CAP,
@@ -14,6 +15,8 @@ from .constants import (
     DEGREE_PARTIAL_MULTI_BONUS_STEP,
     DEGREE_SEMANTIC_WEIGHT,
     DEGREE_STRUCTURED_WEIGHT,
+    DOMAIN_CLUSTERS,
+    DOMAIN_SPECIFICITY,
     EXTRA_MATCH_SHARE,
     FACTOR_KEYS,
     IMPORTANCE_MULTIPLIER,
@@ -25,6 +28,7 @@ from .constants import (
     MATCH_BAND_EXCEPTIONAL,
     MATCH_BAND_POSSIBLE,
     MATCH_BAND_STRONG,
+    ROLE_RELEVANCE_WEIGHT,
     SCORE_CURVE_EXPONENT,
 )
 from .embeddings import semantic_similarity
@@ -46,7 +50,8 @@ NICHE_TOKEN_WEIGHTS = {
     "embedded_firmware": 1.35,
     "power_systems": 1.20,
     "signal_processing": 1.25,
-    "software": 0.85,
+    "compute_hw": 1.30,
+    "software": 0.75,  # generic — low weight
     "robotics": 0.95,
     "cyber": 1.00,
 }
@@ -148,6 +153,10 @@ def _canonicalize_domain_token(token: str) -> str:
             "filter",
             "filters",
         },
+        "compute_hw": {
+            "architecture", "microarchitecture", "processor",
+            "microprocessor", "cpu", "cache", "pipelining", "ipc", "isa",
+        },
         "robotics": {"robotics", "autonomy", "autonomous", "controls"},
         "cyber": {"cybersecurity", "security", "infosec"},
     }
@@ -216,7 +225,7 @@ def _high_information_overlap_bonus(mentee_terms: Set[str], mentor_terms: Set[st
     if "mixed_signal" in shared:
         bonus += 0.10
     if "rf" in shared:
-        bonus += 0.08
+        bonus += 0.14
     if "power_management_ic" in shared:
         bonus += 0.06
 
@@ -224,22 +233,91 @@ def _high_information_overlap_bonus(mentee_terms: Set[str], mentor_terms: Set[st
     return min(0.24, bonus)
 
 
+def _role_relevance_score(mentee: Mentee, mentor: Mentor) -> float:
+    """Score how well the mentor's current job title matches the mentee's career goal.
+
+    Compares domain tokens extracted from the mentor's role field only (not their
+    full profile) against tokens from the mentee's stated goals and help topics.
+    A Senior RF Engineer scores high for an RF-interested mentee; a software engineer
+    scores low. Weighted by domain specificity so niche matches (RF, ASIC) count more
+    than generic ones (software).
+    """
+    mentor_role_tokens = _technical_token_set([mentor.role])
+    mentee_goal_tokens = _technical_token_set(
+        list(mentee.help_topics) + [mentee.goals, mentee.role]
+    )
+    if not mentor_role_tokens or not mentee_goal_tokens:
+        return 0.0
+    overlap = mentor_role_tokens & mentee_goal_tokens
+    if not overlap:
+        return 0.0
+    specificity = max(DOMAIN_SPECIFICITY.get(t, 0.5) for t in overlap)
+    raw = len(overlap) / max(len(mentee_goal_tokens), 1)
+    return min(1.0, raw * (1.0 + specificity))
+
+
+def _adjacency_penalty(mentee_tokens: Set[str], mentor_tokens: Set[str]) -> float:
+    """Return a penalty when mentee and mentor share a domain cluster but not an exact token.
+
+    For example, an RF mentee matched with an analog-only mentor is "adjacent" — the
+    domains are related (same cluster) but distinct. A 0.18 penalty reduces the industry
+    score to signal the match is imperfect without completely eliminating it.
+    """
+    if not mentee_tokens or not mentor_tokens:
+        return 0.0
+    if mentee_tokens & mentor_tokens:
+        return 0.0  # exact overlap — no penalty
+    for cluster in DOMAIN_CLUSTERS:
+        if (mentee_tokens & cluster) and (mentor_tokens & cluster):
+            return ADJACENCY_PENALTY
+    return 0.0
+
+
+def _classify_match_type(mentee_tokens: Set[str], mentor_tokens: Set[str]) -> str:
+    """Classify the quality of the domain token overlap.
+
+    Returns one of:
+      "exact"          — at least one shared canonical domain token
+      "adjacent"       — no shared token but both in the same domain cluster
+      "broad"          — no keyword overlap; match driven by semantic similarity only
+      "best_available" — no signal at all on either side
+    """
+    if not mentee_tokens and not mentor_tokens:
+        return "best_available"
+    if mentee_tokens & mentor_tokens:
+        return "exact"
+    if mentee_tokens and mentor_tokens:
+        for cluster in DOMAIN_CLUSTERS:
+            if (mentee_tokens & cluster) and (mentor_tokens & cluster):
+                return "adjacent"
+    return "broad"
+
+
 def _industry_similarity(mentee: Mentee, mentor: Mentor) -> float:
     broad = semantic_similarity(mentee.industry_embedding, mentor.industry_embedding)
     niche, niche_available, mentee_terms, mentor_terms = _industry_niche_similarity(mentee, mentor)
+    role_relevance = _role_relevance_score(mentee, mentor)
 
     if not niche_available:
-        return broad
+        # No domain tokens available — fall back to semantic + role relevance only.
+        combined = broad * (1.0 - ROLE_RELEVANCE_WEIGHT) + role_relevance * ROLE_RELEVANCE_WEIGHT
+    else:
+        combined = (
+            broad * INDUSTRY_BROAD_WEIGHT
+            + niche * INDUSTRY_NICHE_WEIGHT
+            + role_relevance * ROLE_RELEVANCE_WEIGHT
+        )
+        # Penalise adjacent-only matches (related domain, not exact).
+        penalty = _adjacency_penalty(mentee_terms, mentor_terms)
+        combined = max(0.0, combined - penalty)
 
-    combined = (broad * INDUSTRY_BROAD_WEIGHT) + (niche * INDUSTRY_NICHE_WEIGHT)
+    combined += _high_information_overlap_bonus(mentee_terms, mentor_terms)
 
-    # Niche alignment should separate technically close matches from broad-only matches.
+    # Niche synergy: boost when both keyword AND semantic alignment are strong.
     if niche >= 0.70 and broad >= 0.50:
         combined = min(1.0, combined + 0.05)
     elif niche <= 0.10 and broad < 0.55:
         combined *= 0.90
-
-    combined += _high_information_overlap_bonus(mentee_terms, mentor_terms)
 
     return max(0.0, min(1.0, combined))
 
@@ -484,37 +562,101 @@ def _weighted_average(scores: Dict[str, float], weights: Dict[str, float], facto
     return sum(scores[factor] * active_weights[factor] for factor in active_weights) / denom
 
 
-def _build_match_reason(component_scores: Dict[str, float], display_weights: Dict[str, float]) -> str:
-    """Create a short human-readable rationale for why a pair matched."""
-    ranked = sorted(
-        ((factor, component_scores.get(factor, 0.0), display_weights.get(factor, 0.0)) for factor in FACTOR_KEYS),
-        key=lambda item: (item[1] * item[2], item[2], item[1]),
-        reverse=True,
-    )
+def _build_match_reason(
+    component_scores: Dict[str, float],
+    display_weights: Dict[str, float],
+    mentee_terms: Optional[Set[str]] = None,
+    mentor_terms: Optional[Set[str]] = None,
+    mentor_role: str = "",
+) -> str:
+    """Generate a specific, explainable rationale for why this pair was selected.
 
-    top = ranked[0]
-    second = ranked[1] if len(ranked) > 1 else ranked[0]
+    Explains:
+    - which domain the match is based on (not just 'industry alignment')
+    - the mentor's current role when relevant
+    - whether the match is exact, adjacent, or broad
+    - which scoring factors were strongest
+    """
+    mt = mentee_terms or set()
+    mrt = mentor_terms or set()
+    match_type = _classify_match_type(mt, mrt)
+    shared = mt & mrt
 
-    factor_labels = {
-        "industry": "industry and technical interests",
-        "degree": "academic background",
-        "personality": "profile/personality fit",
-        "identity": "identity/pronoun alignment",
-        "orgs": "organization overlap",
-        "grad_year": "graduation timeline",
+    _domain_labels = {
+        "analog": "analog IC design",
+        "mixed_signal": "mixed-signal IC design",
+        "rf": "RF/wireless engineering",
+        "power_management_ic": "power management IC design",
+        "asic": "ASIC design",
+        "rtl": "RTL/digital design",
+        "fpga": "FPGA design",
+        "embedded_firmware": "embedded systems/firmware",
+        "compute_hw": "computer architecture",
+        "power_systems": "power systems/infrastructure",
+        "signal_processing": "signal processing",
+        "ml_ai": "machine learning/AI",
+        "software": "software engineering",
+        "robotics": "robotics/controls",
+        "cyber": "cybersecurity",
     }
 
-    top_label = factor_labels.get(top[0], top[0])
-    second_label = factor_labels.get(second[0], second[0])
+    role_str = f" ({mentor_role})" if mentor_role else ""
 
-    if component_scores.get("industry", 0.0) >= 0.60 and component_scores.get("degree", 0.0) >= 0.80:
-        return "Matched strongly on technical/industry alignment and compatible academic background."
-    if component_scores.get("industry", 0.0) >= 0.60:
-        return "Matched primarily on strong technical and industry alignment."
-    if component_scores.get("degree", 0.0) >= 0.90:
-        return "Matched primarily on very close degree/program alignment."
+    if match_type == "exact" and shared:
+        best = max(shared, key=lambda t: NICHE_TOKEN_WEIGHTS.get(t, 1.0))
+        domain = _domain_labels.get(best, best.replace("_", " "))
+        specificity = DOMAIN_SPECIFICITY.get(best, 0.5)
+        if specificity >= 0.85:
+            quality = (
+                f"Direct {domain} match. Mentor{role_str} works in the same specialized subfield "
+                f"as the mentee's stated interest. High-specificity domain — direct alignment carries strong signal."
+            )
+        else:
+            quality = (
+                f"Matched on {domain}{role_str}. Shared technical domain provides clear alignment."
+            )
 
-    return f"Matched mostly on {top_label}, with additional support from {second_label}."
+    elif match_type == "adjacent" and mt and mrt:
+        mentee_top = max(mt, key=lambda t: NICHE_TOKEN_WEIGHTS.get(t, 1.0))
+        mentor_top = max(mrt, key=lambda t: NICHE_TOKEN_WEIGHTS.get(t, 1.0))
+        mentee_domain = _domain_labels.get(mentee_top, mentee_top.replace("_", " "))
+        mentor_domain = _domain_labels.get(mentor_top, mentor_top.replace("_", " "))
+        quality = (
+            f"Adjacent domain match. Mentee's interest ({mentee_domain}) and mentor's expertise "
+            f"({mentor_domain}{role_str}) are related but not identical. A closer specialist was "
+            f"not available or scored lower overall."
+        )
+
+    elif match_type == "broad":
+        quality = (
+            f"Broad field alignment{role_str}. No specific subdomain keyword overlap — "
+            f"match driven by overall industry/career similarity."
+        )
+    else:
+        quality = f"Best-available match{role_str} based on closest overall profile alignment."
+
+    # Append strongest scoring factor(s).
+    ranked = sorted(
+        ((f, component_scores.get(f, 0.0), display_weights.get(f, 0.0)) for f in FACTOR_KEYS),
+        key=lambda x: x[1] * x[2],
+        reverse=True,
+    )
+    factor_labels = {
+        "industry": "technical/industry alignment",
+        "degree": "academic background",
+        "personality": "profile fit",
+        "identity": "identity alignment",
+        "orgs": "shared organizations",
+        "grad_year": "graduation timeline",
+    }
+    top_factors = [
+        factor_labels[f] for f, score, w in ranked[:2]
+        if score > 0.0 and w > 0.05
+    ]
+    if top_factors:
+        quality += f" Strongest signals: {' and '.join(top_factors)}."
+
+    return quality
 
 
 def _pair_factor_weights(
@@ -594,9 +736,11 @@ def compute_display_weights(mentee: Mentee, state: MatchingState) -> Dict[str, f
 
 
 def score_pair(mentee: Mentee, mentor: Mentor, state: MatchingState) -> PairScore:
-    """
-    Score one mentor-mentee pair using segmented semantic vectors + direct factors.
-    """
+    """Score one mentor-mentee pair using segmented semantic vectors + direct factors."""
+    # Extract domain tokens once so they can inform both scoring and explanation.
+    _, _, mentee_terms, mentor_terms = _industry_niche_similarity(mentee, mentor)
+    match_type = _classify_match_type(mentee_terms, mentor_terms)
+
     degree_score, degree_overlap_count = _degree_similarity_details(mentee, mentor)
     component_scores = {
         "industry": _industry_similarity(mentee, mentor),
@@ -638,7 +782,14 @@ def score_pair(mentee: Mentee, mentor: Mentor, state: MatchingState) -> PairScor
     match_score = max(0.0, min(1.0, match_score))
 
     display_weights = effective_weights
-    match_reason = _build_match_reason(component_scores, display_weights)
+    match_reason = _build_match_reason(
+        component_scores,
+        display_weights,
+        mentee_terms=mentee_terms,
+        mentor_terms=mentor_terms,
+        mentor_role=mentor.role,
+    )
+
     match_percent = match_score * 100.0
     if match_percent >= MATCH_BAND_EXCEPTIONAL:
         match_band = "exceptional"
@@ -662,4 +813,5 @@ def score_pair(mentee: Mentee, mentor: Mentor, state: MatchingState) -> PairScor
         match_score=match_score,
         match_band=match_band,
         match_reason=match_reason,
+        match_type=match_type,
     )
