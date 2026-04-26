@@ -1,17 +1,30 @@
-# flutter_userforms
+# flutter_mentee
 
-A new Flutter project.
+Mentee registration Flutter web app.
 
-## Getting Started
+## Backend Configuration
 
-This project is a starting point for a Flutter application.
+This app reads backend URL from:
 
-A few resources to get you started if this is your first Flutter project:
+- `--dart-define=BACKEND_API_BASE_URL=...`
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+Used endpoints:
+- `GET /config/{key}`
+- `POST /public/forms/mentee`
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Local Run
+
+```bash
+cd flutter_mentee
+flutter pub get
+flutter run -d chrome \
+  --dart-define=BACKEND_API_BASE_URL=http://localhost:8000
+```
+
+## Production Build (Firebase Hosting)
+
+```bash
+cd flutter_mentee
+flutter build web --release \
+  --dart-define=BACKEND_API_BASE_URL=https://api.example.com
+```

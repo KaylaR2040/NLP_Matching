@@ -85,6 +85,16 @@ class FormDataLoader {
     }
   }
 
+  /// Clears all cached data so the next loadAll() fetches fresh values from the backend.
+  void refresh() {
+    _ncsuOrgs = null;
+    _undergradPrograms = null;
+    _gradPrograms = null;
+    _abmPrograms = null;
+    _phdPrograms = null;
+    _concentrations = null;
+  }
+
   /// Loads all files required by the form before rendering options.
   Future<void> loadAll() async {
     await Future.wait([

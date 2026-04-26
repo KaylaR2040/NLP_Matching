@@ -2,22 +2,22 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/mentee_form_data.dart';
 
-// Backend URL for config list fetching.
-// Override at build time with: --dart-define=BACKEND_CONFIG_URL=https://your-service.onrender.com
-const String _backendConfigUrl = String.fromEnvironment(
-  'BACKEND_CONFIG_URL',
-  defaultValue: 'https://nlp-mentor-backend.onrender.com',
+// Backend API URL for config list fetching + mentee form submission.
+// Override at build time with: --dart-define=BACKEND_API_BASE_URL=https://api.your-domain.com
+const String _backendApiBaseUrlRaw = String.fromEnvironment(
+  'BACKEND_API_BASE_URL',
+  defaultValue: 'https://api.example.com',
 );
 
 class ApiService {
-  // Web app host. API requests are expected under /api on the same domain.
-  static const String baseUrl = 'https://menteeform.vercel.app/api';
+  static String get _backendApiBaseUrl =>
+      _backendApiBaseUrlRaw.replaceFirst(RegExp(r'/+$'), '');
 
   /// Fetch a config list (orgs, concentrations, etc.) from the wrapper backend.
   /// Returns a sorted list of strings on success, throws on failure.
   /// Keys: 'orgs', 'concentrations', 'grad-programs', 'abm-programs', 'phd-programs'
   static Future<List<String>> fetchConfigList(String key) async {
-    final url = Uri.parse('$_backendConfigUrl/config/$key');
+    final url = Uri.parse('$_backendApiBaseUrl/config/$key');
     final response = await http
         .get(url, headers: {'Accept': 'application/json'})
         .timeout(const Duration(seconds: 6));
@@ -36,7 +36,7 @@ class ApiService {
     MenteeFormData formData,
   ) async {
     try {
-      final url = Uri.parse('$baseUrl/mentees');
+      final url = Uri.parse('$_backendApiBaseUrl/public/forms/mentee');
       final jsonData = formData.toJson();
 
       final response = await http.post(

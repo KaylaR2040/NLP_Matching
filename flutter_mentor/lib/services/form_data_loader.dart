@@ -91,6 +91,15 @@ class FormDataLoader {
     return _loadFile(assetPath);
   }
 
+  /// Clears all cached data so the next loadAll() fetches fresh values from the backend.
+  void refresh() {
+    _ncsuOrgs = null;
+    _undergradPrograms = null;
+    _gradPrograms = null;
+    _abmPrograms = null;
+    _phdPrograms = null;
+  }
+
   Future<void> loadAll() async {
     await Future.wait([
       loadNcsuOrgs(),
