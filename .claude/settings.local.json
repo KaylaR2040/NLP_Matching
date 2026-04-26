@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gcloud builds *)",
+      "Bash(export PROJECT_ID=nlp-mentor-2026)",
+      "Bash(export WRAPPER_ALLOWED_ORIGINS=\"https://placeholder.web.app\")",
+      "Bash(./scripts/deploy_backend_cloud_run.sh)"
+    ]
+  }
+}
