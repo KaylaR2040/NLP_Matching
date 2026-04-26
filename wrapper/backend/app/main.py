@@ -640,51 +640,11 @@ def _runtime_override_path(path: Path) -> Path:
 
 
 def _discover_extra_editable_files() -> Dict[str, Dict[str, Any]]:
-    allowed_suffixes = {
-        ".py",
-        ".txt",
-        ".json",
-        ".csv",
-        ".toml",
-        ".yaml",
-        ".yml",
-        ".ini",
-    }
-    skip_parts = {
-        "__pycache__",
-        ".venv",
-        ".git",
-        ".dart_tool",
-        "build",
-        "dev_file_backups",
-        "backups",
-    }
-    roots = [NLP_PROJECT_DIR, BACKEND_ROOT / "app", BACKEND_ROOT / "scripts"]
-    discovered: Dict[str, Dict[str, Any]] = {}
-
-    for root in roots:
-        if not root.exists() or not root.is_dir():
-            continue
-        for candidate in root.rglob("*"):
-            if not candidate.is_file():
-                continue
-            if any(part in skip_parts for part in candidate.parts):
-                continue
-            if candidate.suffix.lower() == ".md":
-                continue
-            if candidate.suffix.lower() not in allowed_suffixes:
-                continue
-            repo_path = _repo_relative_path(candidate)
-            key = f"repo::{repo_path}"
-            if key in discovered:
-                continue
-            discovered[key] = {
-                "label": f"Repo File: {repo_path}",
-                "path": candidate,
-                "script_kind": None,
-                "repo_path": repo_path,
-            }
-    return discovered
+    # Intentionally returns nothing. Python source files (.py), matching engine
+    # code, and backend scripts must not appear in the normal admin UI editor.
+    # Only the five BASE_DEV_EDITABLE_FILES config lists are user-editable.
+    # If raw file access is needed, use the /dev/file/{key} API directly.
+    return {}
 
 
 def _editable_files_map() -> Dict[str, Dict[str, Any]]:
@@ -701,6 +661,17 @@ def _editable_files_map() -> Dict[str, Dict[str, Any]]:
     return rows
 
 
+# Mapping from BASE_DEV_EDITABLE_FILES key → config_lists DB key.
+# When in postgres mode these are read from / written to the config_lists table.
+_CONFIG_LIST_KEYS: Dict[str, str] = {
+    "ncsu_orgs":     "ncsu_orgs",
+    "concentrations": "concentrations",
+    "abm_programs":  "abm_programs",
+    "grad_programs": "grad_programs",
+    "phd_programs":  "phd_programs",
+}
+
+
 def _dev_file_entry(file_key: str) -> Dict[str, Any]:
     entry = _editable_files_map().get(file_key)
     if entry is None:
@@ -715,6 +686,23 @@ def _dev_file_path(file_key: str) -> Path:
 def _list_dev_file_entries() -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
     for key, entry in _editable_files_map().items():
+        durable = _durable_source(entry)
+        db_key = _CONFIG_LIST_KEYS.get(key)
+        if db_key:
+            db_text = _read_config_list_db(db_key)
+            if db_text is not None:
+                line_count = len([ln for ln in db_text.splitlines() if ln.strip()])
+                rows.append({
+                    "file_key": key,
+                    "label": str(entry["label"]),
+                    "path": "",
+                    "line_count": line_count,
+                    "has_update_script": bool(entry.get("script_kind")),
+                    "repo_backed": False,
+                    "durable_source": "database",
+                    "content_source": "database",
+                })
+                continue
         path = Path(entry["path"]).resolve()
         file_info = _read_text_file(path, entry=entry, prefer_remote=False)
         rows.append(
@@ -725,7 +713,7 @@ def _list_dev_file_entries() -> List[Dict[str, Any]]:
                 "line_count": file_info["line_count"],
                 "has_update_script": bool(entry.get("script_kind")),
                 "repo_backed": _is_repo_backed_entry(entry),
-                "durable_source": _durable_source(entry),
+                "durable_source": durable,
             }
         )
     rows.sort(key=lambda item: str(item["label"]).lower())
@@ -744,13 +732,16 @@ def _is_repo_backed_entry(entry: Dict[str, Any]) -> bool:
 
 
 def _durable_source(entry: Dict[str, Any]) -> str:
+    # In postgres mode the config lists are written to Neon, which is always durable.
+    if MENTOR_STORAGE_MODE == "postgres" and MENTOR_DATABASE_URL:
+        return "database"
     if _is_repo_backed_entry(entry) and GITHUB_SYNC.enabled:
         return "github"
-    if _is_repo_backed_entry(entry) and IS_VERCEL:
+    if _is_repo_backed_entry(entry) and IS_SERVERLESS:
         return "not_configured"
     if _is_repo_backed_entry(entry):
         return "local_only"
-    return "runtime_only" if IS_VERCEL else "local_only"
+    return "runtime_only" if IS_SERVERLESS else "local_only"
 
 
 def _writable_dev_path(path: Path) -> Path:
@@ -893,9 +884,13 @@ def _revert_file_from_latest_backup(file_key: str) -> Dict[str, Any]:
 def _require_durable_repo_write(entry: Dict[str, Any]) -> None:
     if not _is_repo_backed_entry(entry):
         return
-    if not IS_VERCEL:
+    if not IS_SERVERLESS:
         return
     if GITHUB_SYNC.enabled:
+        return
+    # In postgres mode, config lists are saved to Neon before this is called,
+    # so the write is already durable. Allow the (best-effort) file write to proceed.
+    if MENTOR_STORAGE_MODE == "postgres" and MENTOR_DATABASE_URL:
         return
     raise HTTPException(
         status_code=503,
@@ -907,6 +902,13 @@ def _require_durable_repo_write(entry: Dict[str, Any]) -> None:
 
 
 def _dev_file_payload_for_key(file_key: str, *, prefer_remote: bool) -> Dict[str, Any]:
+    # For config-list keys, prefer DB content so Cloud Run always shows real data.
+    db_key = _CONFIG_LIST_KEYS.get(file_key)
+    if db_key:
+        db_text = _read_config_list_db(db_key)
+        if db_text is not None:
+            label = str(BASE_DEV_EDITABLE_FILES.get(file_key, {}).get("label", file_key))
+            return _config_list_db_response(db_key, file_key, label, db_text)
     entry = _dev_file_entry(file_key)
     payload = _read_text_file(_dev_file_path(file_key), entry=entry, prefer_remote=prefer_remote)
     payload["file_key"] = file_key
@@ -922,6 +924,13 @@ def _save_dev_file_text(
     text: str,
     actor: str,
 ) -> Dict[str, Any]:
+    # For config list keys, write to DB first (always durable).
+    db_key = _CONFIG_LIST_KEYS.get(file_key)
+    if db_key:
+        label = str(BASE_DEV_EDITABLE_FILES.get(file_key, {}).get("label", file_key))
+        _write_config_list_db(db_key, label, text, actor)
+        if MENTOR_STORAGE_MODE == "postgres" and MENTOR_DATABASE_URL:
+            return _save_config_list_db_response(db_key, file_key, label, text)
     entry = _dev_file_entry(file_key)
     _require_durable_repo_write(entry)
     github_sync = {"status": "disabled"}
@@ -1685,6 +1694,108 @@ def api_health() -> Dict[str, str]:
     return health()
 
 
+def _save_mentor_form_to_db(data: Dict[str, Any], submission_id: str, submitted_at: str) -> None:
+    """Save a public mentor form submission to the mentors table via MENTOR_STORE.
+    Non-fatal: logs warning on failure so the form response is still returned."""
+    if MENTOR_STORAGE_MODE != "postgres" or not MENTOR_DATABASE_URL:
+        return
+    try:
+        first = str(data.get("firstName", "")).strip()
+        last = str(data.get("lastName", "")).strip()
+        known = {
+            "email", "firstName", "lastName", "linkedin", "currentCompany",
+            "currentJobTitle", "currentCity", "currentState", "currentCityState",
+            "degreesSummary", "degrees", "industryFocusArea", "professionalExperience",
+            "aboutYourself", "studentsInterested", "pronouns", "previousMentorship",
+            "whyInterested", "previousInvolvement", "previousInvolvementOrgs",
+            "id", "submissionId", "submittedAt", "submitted_at",
+        }
+        record: Dict[str, Any] = {
+            "mentor_id": submission_id,
+            "email": str(data.get("email", "")).strip().lower(),
+            "first_name": first,
+            "last_name": last,
+            "full_name": f"{first} {last}".strip(),
+            "linkedin_url": str(data.get("linkedin", "")).strip(),
+            "current_company": str(data.get("currentCompany", "")).strip(),
+            "current_job_title": str(data.get("currentJobTitle", "")).strip(),
+            "current_city": str(data.get("currentCity", "")).strip(),
+            "current_state": str(data.get("currentState", "")).strip(),
+            "current_location": str(data.get("currentCityState", "")).strip(),
+            "degrees_text": _build_degrees_summary(data.get("degrees")) or str(data.get("degreesSummary", "")).strip(),
+            "industry_focus_area": str(data.get("industryFocusArea", "")).strip(),
+            "professional_experience": str(data.get("professionalExperience", "")).strip(),
+            "about_yourself": str(data.get("aboutYourself", "")).strip(),
+            "students_interested": str(data.get("studentsInterested", "")).strip(),
+            "source_csv_path": "public_form",
+            "source_timestamp": submitted_at,
+            "extra_fields": {k: v for k, v in data.items() if k not in known},
+        }
+        MENTOR_STORE.create(record, actor="public_form")
+    except Exception as exc:
+        LOG.warning("mentor_form_db_save_failed mentor_id=%s error=%s", submission_id, exc)
+
+
+def _save_mentee_form_to_db(data: Dict[str, Any], submission_id: str, submitted_at: str) -> None:
+    """Save a public mentee form submission to the mentee_submissions table.
+    Non-fatal: logs warning on failure so the form response is still returned."""
+    if MENTOR_STORAGE_MODE != "postgres" or not MENTOR_DATABASE_URL:
+        return
+    try:
+        import psycopg
+        first = str(data.get("firstName", "")).strip()
+        last = str(data.get("lastName", "")).strip()
+        known = {
+            "email", "firstName", "lastName", "pronouns", "educationLevel",
+            "graduationSemester", "graduationYear", "degreePrograms",
+            "hasConcentration", "concentrations", "phdSpecialization",
+            "previousMentorship", "studentOrgs", "experienceLevel",
+            "industriesOfInterest", "aboutYourself", "matchByIndustry",
+            "matchByDegree", "matchByClubs", "matchByIdentity", "matchByGradYears",
+            "helpTopics", "submissionId", "submittedAt", "id", "submitted_at",
+        }
+        def _list_or_str(val: Any) -> str:
+            if isinstance(val, list):
+                return json.dumps(val)
+            return str(val) if val is not None else ""
+        with psycopg.connect(MENTOR_DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO mentee_submissions (
+                        mentee_id, email, first_name, last_name, full_name,
+                        pronouns, education_level, graduation_semester, graduation_year,
+                        degree_programs, concentrations, phd_specialization,
+                        student_orgs, experience_level, industries_of_interest,
+                        about_yourself, help_topics, submitted_at, extra_fields
+                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    ON CONFLICT (mentee_id) DO NOTHING
+                    """,
+                    (
+                        submission_id,
+                        str(data.get("email", "")).strip().lower(),
+                        first, last, f"{first} {last}".strip(),
+                        str(data.get("pronouns", "")).strip(),
+                        str(data.get("educationLevel", "")).strip(),
+                        str(data.get("graduationSemester", "")).strip(),
+                        str(data.get("graduationYear", "")).strip(),
+                        _list_or_str(data.get("degreePrograms")),
+                        _list_or_str(data.get("concentrations")),
+                        str(data.get("phdSpecialization", "")).strip(),
+                        _list_or_str(data.get("studentOrgs")),
+                        str(data.get("experienceLevel", "")).strip(),
+                        _list_or_str(data.get("industriesOfInterest")),
+                        str(data.get("aboutYourself", "")).strip(),
+                        _list_or_str(data.get("helpTopics")),
+                        submitted_at,
+                        json.dumps({k: v for k, v in data.items() if k not in known}) or None,
+                    ),
+                )
+            conn.commit()
+    except Exception as exc:
+        LOG.warning("mentee_form_db_save_failed mentee_id=%s error=%s", submission_id, exc)
+
+
 @app.get("/public/forms/mentor")
 def public_mentor_form_readonly_probe() -> List[Any]:
     return []
@@ -1703,6 +1814,9 @@ def submit_public_mentor_form(payload: Dict[str, Any]) -> Dict[str, Any]:
     mentor_record["submitted_at"] = submitted_at
     mentor_record["degreesSummary"] = _build_degrees_summary(data.get("degrees"))
 
+    # Save to Neon mentors table (best-effort — does not block form submission).
+    _save_mentor_form_to_db(data, submission_id, submitted_at)
+
     try:
         prefilled_link = (
             os.getenv("MENTOR_GOOGLE_FORM_PREFILLED_LINK", "").strip()
@@ -1714,7 +1828,9 @@ def submit_public_mentor_form(payload: Dict[str, Any]) -> Dict[str, Any]:
             prefilled_link=prefilled_link,
             field_order=MENTOR_FIELD_ORDER,
             default_enabled=True,
-            default_required=True,
+            # Not required: DB is now the primary store. Google Form is best-effort.
+            # Set MENTOR_GOOGLE_FORM_REQUIRED=true in env to re-enable strict mode.
+            default_required=False,
         )
         google_form = submit_to_google_form(
             config,
@@ -1722,10 +1838,13 @@ def submit_public_mentor_form(payload: Dict[str, Any]) -> Dict[str, Any]:
             timeout_seconds=GOOGLE_FORM_TIMEOUT_SECONDS,
         )
     except Exception as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Google Form submission failed: {exc}",
-        ) from exc
+        LOG.warning("mentor_google_form_failed mentor_id=%s error=%s", submission_id, exc)
+        google_form = {"forwarded": False, "skipped": False, "error": str(exc)}
+        if os.getenv("MENTOR_GOOGLE_FORM_REQUIRED", "").strip().lower() in {"1", "true", "yes"}:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Google Form submission failed: {exc}",
+            ) from exc
 
     return {
         "success": True,
@@ -1753,6 +1872,9 @@ def submit_public_mentee_form(payload: Dict[str, Any]) -> Dict[str, Any]:
     mentee_record["submittedAt"] = submitted_at
     mentee_record["submitted_at"] = submitted_at
 
+    # Save to Neon mentee_submissions table (best-effort — does not block form submission).
+    _save_mentee_form_to_db(data, submission_id, submitted_at)
+
     try:
         prefilled_link = (
             os.getenv("MENTEE_GOOGLE_FORM_PREFILLED_LINK", "").strip()
@@ -1764,7 +1886,9 @@ def submit_public_mentee_form(payload: Dict[str, Any]) -> Dict[str, Any]:
             prefilled_link=prefilled_link,
             field_order=MENTEE_FIELD_ORDER,
             default_enabled=True,
-            default_required=True,
+            # Not required: DB is now the primary store. Google Form is best-effort.
+            # Set MENTEE_GOOGLE_FORM_REQUIRED=true in env to re-enable strict mode.
+            default_required=False,
         )
         google_form = submit_to_google_form(
             config,
@@ -1772,10 +1896,13 @@ def submit_public_mentee_form(payload: Dict[str, Any]) -> Dict[str, Any]:
             timeout_seconds=GOOGLE_FORM_TIMEOUT_SECONDS,
         )
     except Exception as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Google Form submission failed: {exc}",
-        ) from exc
+        LOG.warning("mentee_google_form_failed mentee_id=%s error=%s", submission_id, exc)
+        google_form = {"forwarded": False, "skipped": False, "error": str(exc)}
+        if os.getenv("MENTEE_GOOGLE_FORM_REQUIRED", "").strip().lower() in {"1", "true", "yes"}:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Google Form submission failed: {exc}",
+            ) from exc
 
     return {
         "success": True,
@@ -2637,14 +2764,50 @@ def get_dev_matching_state(
     return _load_matching_state_for_api(MATCHING_STATE_PATH)
 
 
+def _config_list_db_response(list_key: str, file_key: str, label: str, text: str) -> Dict[str, Any]:
+    """Standard response shape for a config list loaded from the database."""
+    line_count = len([ln for ln in text.splitlines() if ln.strip()])
+    return {
+        "text": text,
+        "file_key": file_key,
+        "label": label,
+        "line_count": line_count,
+        "content_source": "database",
+        "durable_source": "database",
+        "source": "database",
+        "has_update_script": list_key in {"ncsu_orgs", "concentrations"},
+        "repo_backed": False,
+        "backup_path": "",
+        "github_sync": {"status": "disabled"},
+    }
+
+
+def _save_config_list_db_response(list_key: str, file_key: str, label: str, text: str) -> Dict[str, Any]:
+    """Standard save response for a config list written to the database."""
+    line_count = len([ln for ln in text.splitlines() if ln.strip()])
+    return {
+        "text": text,
+        "file_key": file_key,
+        "label": label,
+        "line_count": line_count,
+        "content_source": "database",
+        "durable_source": "database",
+        "source": "database",
+        "has_update_script": list_key in {"ncsu_orgs", "concentrations"},
+        "repo_backed": False,
+        "backup_path": "",
+        "github_sync": {"status": "disabled"},
+    }
+
+
 @app.get("/get_majors")
 def get_majors(_session: AuthSession = Depends(_require_auth(require_dev=True))) -> Dict[str, Any]:
     _audit_dev_action("get_majors", _session)
     db_text = _read_config_list_db("grad_programs")
     if db_text is not None:
-        return {"text": db_text, "file_key": "majors", "label": "Graduate Programs", "source": "database"}
+        return _config_list_db_response("grad_programs", "majors", "Graduate Programs", db_text)
     majors_path = Path(os.getenv("MAJORS_PATH", str(DEFAULT_MAJORS_PATH))).expanduser().resolve()
-    entry = _virtual_dev_entry("Majors", majors_path)
+    entry = _virtual_dev_entry("Graduate Programs", majors_path)
     payload = _read_text_file(majors_path, entry=entry, prefer_remote=True)
     payload["label"] = str(entry["label"])
     payload["file_key"] = "majors"
@@ -2660,17 +2823,14 @@ def save_majors(
 ) -> Dict[str, Any]:
     _audit_dev_action("save_majors", _session)
     _write_config_list_db("grad_programs", "Graduate Programs (MS)", request.text, _session.username)
+    if MENTOR_STORAGE_MODE == "postgres" and MENTOR_DATABASE_URL:
+        return _save_config_list_db_response("grad_programs", "majors", "Graduate Programs", request.text)
     majors_path = Path(os.getenv("MAJORS_PATH", str(DEFAULT_MAJORS_PATH))).expanduser().resolve()
-    entry = _virtual_dev_entry("Majors", majors_path)
+    entry = _virtual_dev_entry("Graduate Programs", majors_path)
     _require_durable_repo_write(entry)
     github_sync = {"status": "disabled"}
     if _is_repo_backed_entry(entry) and GITHUB_SYNC.enabled:
-        github_sync = _sync_dev_file_to_github(
-            entry,
-            request.text,
-            action="save_majors",
-            actor=_session.username,
-        )
+        github_sync = _sync_dev_file_to_github(entry, request.text, action="save_majors", actor=_session.username)
         _ensure_github_sync_succeeded(github_sync, action="save_majors")
     payload = _write_text_file_with_backup(majors_path, request.text, "majors")
     payload["github_sync"] = github_sync
@@ -2685,7 +2845,7 @@ def get_orgs(_session: AuthSession = Depends(_require_auth(require_dev=True))) -
     _audit_dev_action("get_orgs", _session)
     db_text = _read_config_list_db("ncsu_orgs")
     if db_text is not None:
-        return {"text": db_text, "file_key": "ncsu_orgs", "label": "NCSU Organizations", "source": "database"}
+        return _config_list_db_response("ncsu_orgs", "ncsu_orgs", "NCSU Organizations", db_text)
     return _dev_file_payload_for_key("ncsu_orgs", prefer_remote=True)
 
 
@@ -2696,11 +2856,9 @@ def save_orgs(
 ) -> Dict[str, Any]:
     _audit_dev_action("save_orgs", _session)
     _write_config_list_db("ncsu_orgs", "NCSU Organizations", request.text, _session.username)
-    return _save_dev_file_text(
-        file_key="ncsu_orgs",
-        text=request.text,
-        actor=_session.username,
-    )
+    if MENTOR_STORAGE_MODE == "postgres" and MENTOR_DATABASE_URL:
+        return _save_config_list_db_response("ncsu_orgs", "ncsu_orgs", "NCSU Organizations", request.text)
+    return _save_dev_file_text(file_key="ncsu_orgs", text=request.text, actor=_session.username)
 
 
 @app.get("/get_concentrations")
@@ -2708,7 +2866,7 @@ def get_concentrations(_session: AuthSession = Depends(_require_auth(require_dev
     _audit_dev_action("get_concentrations", _session)
     db_text = _read_config_list_db("concentrations")
     if db_text is not None:
-        return {"text": db_text, "file_key": "concentrations", "label": "Concentrations", "source": "database"}
+        return _config_list_db_response("concentrations", "concentrations", "Concentrations", db_text)
     return _dev_file_payload_for_key("concentrations", prefer_remote=True)
 
 
@@ -2719,11 +2877,9 @@ def save_concentrations(
 ) -> Dict[str, Any]:
     _audit_dev_action("save_concentrations", _session)
     _write_config_list_db("concentrations", "ECE Concentrations", request.text, _session.username)
-    return _save_dev_file_text(
-        file_key="concentrations",
-        text=request.text,
-        actor=_session.username,
-    )
+    if MENTOR_STORAGE_MODE == "postgres" and MENTOR_DATABASE_URL:
+        return _save_config_list_db_response("concentrations", "concentrations", "Concentrations", request.text)
+    return _save_dev_file_text(file_key="concentrations", text=request.text, actor=_session.username)
 
 
 @app.post("/export_assignments")
@@ -2867,4 +3023,58 @@ def get_match_result(
         raise
     except Exception as exc:
         LOG.exception("match_result_get_failed id=%s error=%s", result_id, exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
+# Mentee submissions (dev-only).
+# ---------------------------------------------------------------------------
+
+@app.get("/mentees")
+def list_mentee_submissions(
+    limit: int = 50,
+    offset: int = 0,
+    _session: AuthSession = Depends(_require_auth(require_dev=True)),
+) -> Dict[str, Any]:
+    """Return mentee form submissions stored in the database (postgres mode only)."""
+    if MENTOR_STORAGE_MODE != "postgres" or not MENTOR_DATABASE_URL:
+        raise HTTPException(
+            status_code=503,
+            detail="Mentee list requires WRAPPER_MENTOR_STORAGE_MODE=postgres and DATABASE_URL.",
+        )
+    try:
+        import psycopg
+        with psycopg.connect(MENTOR_DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM mentee_submissions")
+                total = cur.fetchone()[0]  # type: ignore[index]
+                cur.execute(
+                    """
+                    SELECT mentee_id, email, first_name, last_name, full_name,
+                           education_level, industries_of_interest, submitted_at
+                    FROM mentee_submissions
+                    ORDER BY submitted_at DESC
+                    LIMIT %s OFFSET %s
+                    """,
+                    (min(max(1, limit), 200), max(0, offset)),
+                )
+                rows = cur.fetchall()
+        return {
+            "items": [
+                {
+                    "mentee_id": r[0],
+                    "email": r[1],
+                    "first_name": r[2],
+                    "last_name": r[3],
+                    "full_name": r[4],
+                    "education_level": r[5],
+                    "industries_of_interest": r[6],
+                    "submitted_at": r[7].isoformat() if r[7] else None,
+                }
+                for r in rows
+            ],
+            "total": total,
+        }
+    except Exception as exc:
+        LOG.exception("list_mentees_failed error=%s", exc)
         raise HTTPException(status_code=500, detail=str(exc)) from exc

@@ -29,12 +29,14 @@ except ImportError:
 
 DDL = """
 -- ----------------------------------------------------------------
--- mentors
--- Mirrors the DB_COLUMNS tuple in wrapper/backend/app/mentor_store.py.
--- Created automatically by mentor_store.py when storage mode is
--- "postgres", but included here for explicit, documented setup.
+-- mentor_records
+-- The actual mentor storage table used by PostgresMentorStore in
+-- wrapper/backend/app/mentor_store.py. This table is also created
+-- automatically by mentor_store.py on first connect, but is included
+-- here so a fresh database is fully initialized without needing a
+-- live API server.
 -- ----------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS mentors (
+CREATE TABLE IF NOT EXISTS mentor_records (
     mentor_id                   TEXT PRIMARY KEY,
     email                       TEXT,
     first_name                  TEXT,
@@ -62,11 +64,15 @@ CREATE TABLE IF NOT EXISTS mentors (
     last_enriched_at            TIMESTAMPTZ,
     enrichment_status           TEXT,
     enrichment_provider_metadata JSONB,
-    extra_fields                JSONB
+    extra_fields                JSONB,
+    created_at                  TIMESTAMPTZ DEFAULT NOW(),
+    updated_at                  TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS mentors_email_idx ON mentors (email);
-CREATE INDEX IF NOT EXISTS mentors_is_active_idx ON mentors (is_active);
+CREATE UNIQUE INDEX IF NOT EXISTS mentor_records_normalized_email_unique
+    ON mentor_records (lower(trim(email))) WHERE trim(email) <> '';
+CREATE INDEX IF NOT EXISTS mentor_records_normalized_full_name_idx
+    ON mentor_records (lower(trim(full_name)));
 
 -- ----------------------------------------------------------------
 -- config_lists
@@ -100,6 +106,37 @@ CREATE TABLE IF NOT EXISTS match_results (
 );
 
 CREATE INDEX IF NOT EXISTS match_results_run_at_idx ON match_results (run_at DESC);
+
+-- ----------------------------------------------------------------
+-- mentee_submissions
+-- Stores mentee form submissions from /public/forms/mentee.
+-- Provides a durable record for matching and audit, separate from
+-- the transient CSV upload used by /run_match.
+-- ----------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS mentee_submissions (
+    mentee_id               TEXT PRIMARY KEY,
+    email                   TEXT,
+    first_name              TEXT,
+    last_name               TEXT,
+    full_name               TEXT,
+    pronouns                TEXT,
+    education_level         TEXT,
+    graduation_semester     TEXT,
+    graduation_year         TEXT,
+    degree_programs         TEXT,
+    concentrations          TEXT,
+    phd_specialization      TEXT,
+    student_orgs            TEXT,
+    experience_level        TEXT,
+    industries_of_interest  TEXT,
+    about_yourself          TEXT,
+    help_topics             TEXT,
+    submitted_at            TIMESTAMPTZ DEFAULT NOW(),
+    extra_fields            JSONB
+);
+
+CREATE INDEX IF NOT EXISTS mentee_submissions_email_idx ON mentee_submissions (email);
+CREATE INDEX IF NOT EXISTS mentee_submissions_submitted_at_idx ON mentee_submissions (submitted_at DESC);
 """
 
 
@@ -125,7 +162,7 @@ def main() -> int:
         conn.commit()
 
     print("Schema initialized successfully.")
-    print("Tables created (or already existed): mentors, config_lists, match_results")
+    print("Tables created (or already existed): mentor_records, config_lists, match_results, mentee_submissions")
     return 0
 
 

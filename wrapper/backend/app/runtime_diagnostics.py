@@ -10,8 +10,8 @@ from pathlib import Path
 def emit_runtime_diagnostics(entrypoint: str) -> None:
     """Print lightweight runtime diagnostics before importing heavy app modules.
 
-    This is primarily for Vercel/serverless debugging. It intentionally uses only
-    stdlib imports so it can run even when third-party packages are missing.
+    This intentionally uses only stdlib imports so it can run even when
+    third-party packages are missing.
     """
 
     try:
@@ -25,6 +25,7 @@ def emit_runtime_diagnostics(entrypoint: str) -> None:
             "sys_base_prefix": sys.base_prefix,
             "virtual_env": os.getenv("VIRTUAL_ENV", ""),
             "vercel": os.getenv("VERCEL", ""),
+            "k_service": os.getenv("K_SERVICE", ""),
             "pythonpath": os.getenv("PYTHONPATH", ""),
             "sys_path_head": sys.path[:8],
             "cwd_requirements_exists": Path("requirements.txt").exists(),
