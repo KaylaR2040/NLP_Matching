@@ -328,17 +328,19 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>> runMatch({
-    required SelectedFile menteeFile,
+    SelectedFile? menteeFile,
     required Map<String, dynamic> payload,
   }) async {
     final uri = _uri('/run_match');
     final request = http.MultipartRequest('POST', uri)
-      ..fields['payload_json'] = jsonEncode(payload)
-      ..files.add(http.MultipartFile.fromBytes(
+      ..fields['payload_json'] = jsonEncode(payload);
+    if (menteeFile != null) {
+      request.files.add(http.MultipartFile.fromBytes(
         'mentee_file',
         menteeFile.bytes,
         filename: menteeFile.filename,
       ));
+    }
 
     if (_authToken != null && _authToken!.isNotEmpty) {
       request.headers['Authorization'] = 'Bearer $_authToken';

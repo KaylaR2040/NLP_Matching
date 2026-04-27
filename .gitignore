@@ -38,5 +38,11 @@ nlp_project/data/
 wrapper/backend/data/dev_file_backups/
 wrapper/backend/data/mentors/backups/
 
+# CREDENTIALS (never commit actual passwords/keys)
+documentation/access/*
+
+# Claude Code local session settings (may contain allowed commands with inline secrets)
+.claude/settings.local.json
+
 # OTHER
 .idea/

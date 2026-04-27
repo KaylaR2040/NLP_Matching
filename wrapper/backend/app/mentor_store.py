@@ -109,6 +109,7 @@ MENTOR_FIELDS = {
     "phone",
     "preferred_contact_method",
     "is_active",
+    "is_demo",
     "source_csv_path",
     "source_timestamp",
     "last_modified_at",
@@ -140,6 +141,7 @@ DB_COLUMNS: Sequence[str] = (
     "phone",
     "preferred_contact_method",
     "is_active",
+    "is_demo",
     "source_csv_path",
     "source_timestamp",
     "last_modified_at",
@@ -284,13 +286,19 @@ def _normalize_field(field: str, value: Any) -> Any:
             return 0
         return int(match.group(1))
 
-    if field in {"is_active"}:
+    if field == "is_active":
         if isinstance(value, bool):
             return value
         text = _stringify(value).lower()
         if text in {"", "none", "null"}:
             return True
         return text in {"1", "true", "yes", "y", "active"}
+
+    if field == "is_demo":
+        if isinstance(value, bool):
+            return value
+        text = _stringify(value).lower()
+        return text in {"1", "true", "yes"}
 
     if field in {"extra_fields", "enrichment_provider_metadata"}:
         return value if isinstance(value, dict) else {}
@@ -568,10 +576,15 @@ class MentorStoreCommon:
         self,
         *,
         include_inactive: bool = True,
+        demo_only: bool = False,
+        exclude_demo: bool = False,
     ) -> Dict[str, Any]:
         records = self.load_records()
         filtered = [
-            row for row in records if include_inactive or bool(row.get("is_active", True))
+            row for row in records
+            if (include_inactive or bool(row.get("is_active", True)))
+            and (not demo_only or bool(row.get("is_demo", False)))
+            and (not exclude_demo or not bool(row.get("is_demo", False)))
         ]
         filtered.sort(key=lambda row: _stringify(row.get("full_name")).lower())
 
@@ -1216,6 +1229,7 @@ class PostgresMentorStore(MentorStoreCommon):
                 phone TEXT NOT NULL DEFAULT '',
                 preferred_contact_method TEXT NOT NULL DEFAULT '',
                 is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                is_demo BOOLEAN NOT NULL DEFAULT FALSE,
                 source_csv_path TEXT NOT NULL DEFAULT '',
                 source_timestamp TEXT NOT NULL DEFAULT '',
                 last_modified_at TEXT NOT NULL DEFAULT '',
@@ -1230,6 +1244,10 @@ class PostgresMentorStore(MentorStoreCommon):
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
             """,
+            # Idempotent column additions — must run before any index that references them.
+            "ALTER TABLE mentor_records ADD COLUMN IF NOT EXISTS normalized_email TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE mentor_records ADD COLUMN IF NOT EXISTS normalized_full_name TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE mentor_records ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT FALSE",
             """
             CREATE UNIQUE INDEX IF NOT EXISTS mentor_records_normalized_email_unique
                 ON mentor_records (normalized_email)
@@ -1328,8 +1346,8 @@ class MentorStore:
             dry_run=dry_run,
         )
 
-    def export_csv(self, *, include_inactive: bool = True) -> Dict[str, Any]:
-        return self._backend.export_csv(include_inactive=include_inactive)
+    def export_csv(self, *, include_inactive: bool = True, demo_only: bool = False, exclude_demo: bool = False) -> Dict[str, Any]:
+        return self._backend.export_csv(include_inactive=include_inactive, demo_only=demo_only, exclude_demo=exclude_demo)
 
     def write_export_to_path(
         self,

@@ -95,7 +95,9 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
   }
 
   Future<void> _runMatch({required bool rerun}) async {
-    if (_menteeFile == null) {
+    if (!widget.isDev && _menteeFile != null) {
+      // Demo users always use the server-side pre-loaded mentee data.
+    } else if (widget.isDev && _menteeFile == null) {
       setState(() => _status = 'Mentee file is required.');
       return;
     }
@@ -123,7 +125,7 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
       };
 
       final response = await widget.apiClient.runMatch(
-        menteeFile: _menteeFile!,
+        menteeFile: widget.isDev ? _menteeFile : null,
         payload: payload,
       );
       final result = (response['result'] as Map<String, dynamic>? ?? {});
@@ -1059,14 +1061,22 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
                       runSpacing: 10,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        // ── Mentee file source ──────────────────────────
-                        OutlinedButton.icon(
-                          onPressed: _loading ? null : _pickMenteeFile,
-                          icon: const Icon(Icons.upload_file),
-                          label: Text(_menteeFile == null
-                              ? 'Upload Mentee CSV/XLSX'
-                              : 'Mentees: ${_menteeFile!.filename}'),
-                        ),
+                        if (widget.isDev) ...[
+                          // ── Dev: upload mentee file ──────────────────
+                          OutlinedButton.icon(
+                            onPressed: _loading ? null : _pickMenteeFile,
+                            icon: const Icon(Icons.upload_file),
+                            label: Text(_menteeFile == null
+                                ? 'Upload Mentee CSV/XLSX'
+                                : 'Mentees: ${_menteeFile!.filename}'),
+                          ),
+                        ] else ...[
+                          // ── Demo: show pre-loaded chip ───────────────
+                          const Chip(
+                            avatar: Icon(Icons.people_outline, size: 16),
+                            label: Text('Mentees: demo data (10 students)'),
+                          ),
+                        ],
                         // ── Mentor source chip (read-only status) ────────
                         const Chip(
                           avatar: Icon(Icons.storage_outlined, size: 16),
@@ -1075,7 +1085,7 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
                         const SizedBox(width: 4),
                         // ── Primary action ───────────────────────────────
                         ElevatedButton.icon(
-                          onPressed: (_loading || _menteeFile == null)
+                          onPressed: (_loading || (widget.isDev && _menteeFile == null))
                               ? null
                               : () => _runMatch(rerun: false),
                           icon: const Icon(Icons.play_arrow),
@@ -1086,29 +1096,31 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
                           ),
                         ),
                         // ── Secondary actions ────────────────────────────
-                        OutlinedButton.icon(
-                          onPressed: (_loading || _menteeFile == null)
-                              ? null
-                              : () => _runMatch(rerun: true),
-                          icon: const Icon(Icons.refresh),
-                          label: const Text('Rerun'),
-                        ),
+                        if (widget.isDev)
+                          OutlinedButton.icon(
+                            onPressed: (_loading || _menteeFile == null)
+                                ? null
+                                : () => _runMatch(rerun: true),
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Rerun'),
+                          ),
                         OutlinedButton.icon(
                           onPressed: _loading ? null : _exportCurrentBoard,
                           icon: const Icon(Icons.download),
                           label: const Text('Download XLSX'),
                         ),
-                        // ── Destructive action ───────────────────────────
-                        TextButton.icon(
-                          onPressed: (_loading || _menteeFile == null)
-                              ? null
-                              : _resetAndRunFromScratch,
-                          icon: const Icon(Icons.restart_alt, size: 18),
-                          label: const Text('Reset & Rerun'),
-                          style: TextButton.styleFrom(
-                            foregroundColor: Colors.red.shade700,
+                        // ── Destructive action (dev only) ────────────────
+                        if (widget.isDev)
+                          TextButton.icon(
+                            onPressed: (_loading || _menteeFile == null)
+                                ? null
+                                : _resetAndRunFromScratch,
+                            icon: const Icon(Icons.restart_alt, size: 18),
+                            label: const Text('Reset & Rerun'),
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.red.shade700,
+                            ),
                           ),
-                        ),
                       ],
                     ),
                   ),

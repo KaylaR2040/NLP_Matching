@@ -65,9 +65,13 @@ CREATE TABLE IF NOT EXISTS mentor_records (
     enrichment_status           TEXT,
     enrichment_provider_metadata JSONB,
     extra_fields                JSONB,
+    is_demo                     BOOLEAN DEFAULT FALSE,
     created_at                  TIMESTAMPTZ DEFAULT NOW(),
     updated_at                  TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Idempotent migration: add is_demo to existing tables created before this column existed.
+ALTER TABLE mentor_records ADD COLUMN IF NOT EXISTS is_demo BOOLEAN DEFAULT FALSE;
 
 CREATE UNIQUE INDEX IF NOT EXISTS mentor_records_normalized_email_unique
     ON mentor_records (lower(trim(email))) WHERE trim(email) <> '';

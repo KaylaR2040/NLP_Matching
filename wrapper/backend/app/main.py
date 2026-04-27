@@ -1985,9 +1985,13 @@ def list_mentors(
     location: str = "",
     offset: int = 0,
     limit: int = 200,
-    _session: AuthSession = Depends(_require_auth()),
+    session: AuthSession = Depends(_require_auth()),
 ) -> MentorsListResponse:
     records = MENTOR_STORE.load_records()
+    if session.is_dev:
+        records = [r for r in records if not r.get("is_demo")]
+    else:
+        records = [r for r in records if r.get("is_demo")]
 
     query = q.strip().lower()
     company_term = company.strip().lower()
@@ -2073,9 +2077,13 @@ async def import_mentors_csv(
 @app.get("/mentors/export-csv")
 def export_mentors_csv(
     include_inactive: bool = True,
-    _session: AuthSession = Depends(_require_auth()),
+    session: AuthSession = Depends(_require_auth()),
 ) -> StreamingResponse:
-    export_payload = MENTOR_STORE.export_csv(include_inactive=include_inactive)
+    export_payload = MENTOR_STORE.export_csv(
+        include_inactive=include_inactive,
+        demo_only=not session.is_dev,
+        exclude_demo=session.is_dev,
+    )
     csv_text = str(export_payload["csv_text"])
     output = BytesIO(csv_text.encode("utf-8"))
     headers = {"Content-Disposition": "attachment; filename=mentor_manager_export.csv"}
@@ -2085,9 +2093,13 @@ def export_mentors_csv(
 @app.get("/mentors/export-xlsx")
 def export_mentors_xlsx(
     include_inactive: bool = True,
-    _session: AuthSession = Depends(_require_auth()),
+    session: AuthSession = Depends(_require_auth()),
 ) -> StreamingResponse:
-    export_payload = MENTOR_STORE.export_csv(include_inactive=include_inactive)
+    export_payload = MENTOR_STORE.export_csv(
+        include_inactive=include_inactive,
+        demo_only=not session.is_dev,
+        exclude_demo=session.is_dev,
+    )
     csv_text = str(export_payload["csv_text"])
     columns = [str(item) for item in export_payload.get("columns", [])]
     reader = csv.DictReader(StringIO(csv_text))
@@ -2141,10 +2153,15 @@ def sync_mentors_to_default_csv(
 @app.get("/mentors/{mentor_id}", response_model=MentorRecord)
 def get_mentor(
     mentor_id: str,
-    _session: AuthSession = Depends(_require_auth()),
+    session: AuthSession = Depends(_require_auth()),
 ) -> MentorRecord:
     record = MENTOR_STORE.get_by_id(mentor_id)
     if record is None:
+        raise HTTPException(status_code=404, detail=f"Mentor '{mentor_id}' was not found")
+    is_demo_record = bool(record.get("is_demo"))
+    if session.is_dev and is_demo_record:
+        raise HTTPException(status_code=404, detail=f"Mentor '{mentor_id}' was not found")
+    if not session.is_dev and not is_demo_record:
         raise HTTPException(status_code=404, detail=f"Mentor '{mentor_id}' was not found")
     return MentorRecord(**_mentor_record_for_api(record))
 
@@ -2423,7 +2440,7 @@ def _apply_nlp_runtime_overrides(runtime_nlp_dir: Path) -> None:
 @app.post("/run_match")
 async def run_match(
     request: Request,
-    mentee_file: UploadFile = File(...),
+    mentee_file: Optional[UploadFile] = File(None),
     mentor_file: Optional[UploadFile] = File(None),
     payload_json: str = Form("{}"),
     _session: AuthSession = Depends(_require_auth()),
@@ -2460,7 +2477,19 @@ async def run_match(
             state_path = tmp_dir / "state.json"
             mentor_source = "manager_store"
 
-            _as_csv(mentee_file.filename or "mentees.csv", await mentee_file.read(), mentee_csv)
+            is_demo_session = not _session.is_dev
+            if mentee_file is not None:
+                _as_csv(mentee_file.filename or "mentees.csv", await mentee_file.read(), mentee_csv)
+            elif is_demo_session:
+                demo_mentee_path = BACKEND_ROOT / "data" / "demo_mentees.csv"
+                if not demo_mentee_path.exists():
+                    raise HTTPException(
+                        status_code=503,
+                        detail="Demo mentee data is not available. Contact the administrator.",
+                    )
+                shutil.copy2(demo_mentee_path, mentee_csv)
+            else:
+                raise HTTPException(status_code=400, detail="mentee_file is required.")
             mentor_payload: Optional[bytes] = None
             mentor_filename = "mentors.csv"
             if mentor_file is not None:
@@ -2471,12 +2500,18 @@ async def run_match(
                 _as_csv(mentor_filename, mentor_payload, mentor_csv)
                 mentor_source = "uploaded_file"
             else:
-                export_payload = MENTOR_STORE.export_csv(include_inactive=False)
+                export_payload = MENTOR_STORE.export_csv(
+                    include_inactive=False,
+                    demo_only=is_demo_session,
+                    exclude_demo=_session.is_dev,
+                )
                 if int(export_payload.get("rows", 0)) <= 0:
-                    raise HTTPException(
-                        status_code=400,
-                        detail="No active mentors are available in Mentor Manager. Add mentors before running matching.",
+                    detail = (
+                        "No demo mentors are available. Run the seed_demo_mentors.py script first."
+                        if is_demo_session
+                        else "No active mentors are available in Mentor Manager. Add mentors before running matching."
                     )
+                    raise HTTPException(status_code=400, detail=detail)
                 mentor_csv.write_text(str(export_payload.get("csv_text", "")), encoding="utf-8")
                 mentor_source = "mentor_manager"
 

@@ -82,6 +82,7 @@ class MentorRecord(BaseModel):
     phone: str = ""
     preferred_contact_method: str = ""
     is_active: bool = True
+    is_demo: bool = False
     source_csv_path: str = ""
     source_timestamp: str = ""
     last_modified_at: str = ""
@@ -111,6 +112,7 @@ class MentorCreateRequest(BaseModel):
     phone: str = ""
     preferred_contact_method: str = ""
     is_active: bool = True
+    is_demo: bool = False
     source_csv_path: str = ""
     source_timestamp: str = ""
     enrichment_status: str = ""
