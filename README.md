@@ -61,13 +61,14 @@ Quick links:
 
 | Service | Account | Notes |
 |---|---|---|
-| Google Cloud (GCP) | kaylaradu@gmail.com | Billing owner — credit card stays here |
-| GCP project IAM | nlp.matching@gmail.com | Editor role — can deploy, no billing access |
-| Neon Postgres | nlp.matching@gmail.com | Database owner |
+| Google Cloud (GCP) | billing owner account | Credit card stays here — never shared |
+| GCP project IAM | project operator account | Editor role — can deploy, no billing access |
+| Neon Postgres | project operator account | Database owner |
 | Firebase | via GCP IAM | No separate login needed |
 
 Credentials, passwords, and connection strings are stored locally in
 `documentation/access/CREDENTIALS.md` (gitignored — never committed).
+See `documentation/access/ACCOUNT_TRANSITION.md` for how to set up IAM access.
 
 ---
 

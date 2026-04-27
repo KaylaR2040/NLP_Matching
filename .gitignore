@@ -1,13 +1,19 @@
 # MACOS
 .DS_Store
 
-# API KEYS
+# API KEYS & CREDENTIALS
 .env
 .env.*
 !.env.example
 wrapper/backend/.env
 wrapper/backend/.env.*
 !wrapper/backend/.env.example
+
+# CREDENTIALS (never commit actual passwords/keys)
+documentation/access/*
+
+# Claude Code local session settings (may contain allowed commands with inline secrets)
+.claude/settings.local.json
 
 # PYTHON
 __pycache__/
@@ -16,6 +22,8 @@ __pycache__/
 *.pyd
 *.db
 *.sqlite3
+*.egg-info/
+.venv/
 
 # FLUTTER
 build/
@@ -25,24 +33,24 @@ build/
 .pub-cache/
 .pub/
 .flutter_sdk/
+.dart_tool/
 
 # FIREBASE
 .firebase/
 firebase-debug.log*
 
-# USER DATA
+# USER DATA (mentor/mentee PII — never commit)
 /data/*
 !/data/*.txt
 !/data/*.csv
 nlp_project/data/
+nlp_project/state/
+nlp_project/output/
+wrapper/backend/data/mentors/
 wrapper/backend/data/dev_file_backups/
-wrapper/backend/data/mentors/backups/
 
-# CREDENTIALS (never commit actual passwords/keys)
-documentation/access/*
-
-# Claude Code local session settings (may contain allowed commands with inline secrets)
-.claude/settings.local.json
+# DUPLICATE — nlp_project is at repo root; backend copy is built by Docker at deploy time
+wrapper/backend/nlp_project/
 
 # OTHER
 .idea/
