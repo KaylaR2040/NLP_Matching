@@ -1184,6 +1184,9 @@ class PostgresMentorStore(MentorStoreCommon):
     def _record_params(self, record: Dict[str, Any]) -> Tuple[Any, ...]:
         return tuple(self._record_value(record, column) for column in DB_COLUMNS)
 
+    # Columns that are TIMESTAMPTZ in the DB — empty string is invalid, must be NULL.
+    _TIMESTAMP_COLUMNS = {"source_timestamp", "last_modified_at", "last_enriched_at"}
+
     def _record_value(self, record: Dict[str, Any], column: str) -> Any:
         if column == "normalized_email":
             return self._normalized_email(record)
@@ -1192,6 +1195,8 @@ class PostgresMentorStore(MentorStoreCommon):
         value = record.get(column)
         if column in {"extra_fields", "enrichment_provider_metadata"}:
             return Jsonb(value if isinstance(value, dict) else {})
+        if column in self._TIMESTAMP_COLUMNS and not value:
+            return None
         return value
 
     def _row_to_record(self, row: Dict[str, Any]) -> Dict[str, Any]:
