@@ -17,3 +17,5 @@ nlp_project/output
 nlp_project/state
 wrapper/backend/data/mentors/backups
 wrapper/backend/nlp_project
+.flutter_sdk
+data

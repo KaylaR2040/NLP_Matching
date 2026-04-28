@@ -5,11 +5,11 @@ class FormOptions {
   static final FormDataLoader _loader = FormDataLoader();
 
   static const List<String> pronouns = [
-    'He/him',
-    'Other',
-    'Prefer not to say',
     'She/her',
+    'He/him',
     'They/them',
+    'Prefer not to say',
+    "Other",
   ];
 
   static const List<String> educationLevels = [

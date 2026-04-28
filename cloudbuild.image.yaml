@@ -1,4 +1,12 @@
 steps:
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - auth
+      - configure-docker
+      - us-central1-docker.pkg.dev
+      - --quiet
+
   - name: gcr.io/cloud-builders/docker
     args:
       - build
@@ -8,6 +16,11 @@ steps:
       - $_IMAGE_URI
       - .
     timeout: 1600s
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - $_IMAGE_URI
 
 images:
   - $_IMAGE_URI

@@ -6,11 +6,11 @@ class FormOptions {
 
   // Pronouns
   static const List<String> pronouns = [
-    'He/him',
-    "Other",
-    'Prefer not to say',
     'She/her',
+    'He/him',
     'They/them',
+    'Prefer not to say',
+    "Other",
   ];
 
   // Education levels
