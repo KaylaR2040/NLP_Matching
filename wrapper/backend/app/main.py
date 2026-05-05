@@ -1856,13 +1856,20 @@ def _save_mentor_form_to_db(
         return {"saved": False, "reason": "error"}
 
 
-def _save_mentee_form_to_db(data: Dict[str, Any], submission_id: str, submitted_at: str) -> None:
+def _save_mentee_form_to_db(data: Dict[str, Any], submission_id: str, submitted_at: str) -> Dict[str, Any]:
     """Save a public mentee form submission to the mentee_submissions table.
-    Non-fatal: logs warning on failure so the form response is still returned."""
+
+    Returns a result dict with keys:
+      saved (bool), reason (str, only on failure):
+        "no_db"           — postgres not configured
+        "duplicate_email" — this email already has a submission
+        "error"           — unexpected DB error
+    """
     if MENTOR_STORAGE_MODE != "postgres" or not MENTOR_DATABASE_URL:
-        return
+        return {"saved": False, "reason": "no_db"}
     try:
         import psycopg
+        email = str(data.get("email", "")).strip().lower()
         first = str(data.get("firstName", "")).strip()
         last = str(data.get("lastName", "")).strip()
         known = {
@@ -1880,6 +1887,14 @@ def _save_mentee_form_to_db(data: Dict[str, Any], submission_id: str, submitted_
             return str(val) if val is not None else ""
         with psycopg.connect(MENTOR_DATABASE_URL) as conn:
             with conn.cursor() as cur:
+                # Block duplicate submissions by email.
+                if email:
+                    cur.execute(
+                        "SELECT mentee_id FROM mentee_submissions WHERE lower(trim(email)) = %s LIMIT 1",
+                        (email,),
+                    )
+                    if cur.fetchone() is not None:
+                        return {"saved": False, "reason": "duplicate_email"}
                 cur.execute(
                     """
                     INSERT INTO mentee_submissions (
@@ -1893,7 +1908,7 @@ def _save_mentee_form_to_db(data: Dict[str, Any], submission_id: str, submitted_
                     """,
                     (
                         submission_id,
-                        str(data.get("email", "")).strip().lower(),
+                        email,
                         first, last, f"{first} {last}".strip(),
                         str(data.get("pronouns", "")).strip(),
                         str(data.get("educationLevel", "")).strip(),
@@ -1912,8 +1927,10 @@ def _save_mentee_form_to_db(data: Dict[str, Any], submission_id: str, submitted_
                     ),
                 )
             conn.commit()
+        return {"saved": True}
     except Exception as exc:
         LOG.warning("mentee_form_db_save_failed mentee_id=%s error=%s", submission_id, exc)
+        return {"saved": False, "reason": "error"}
 
 
 @app.get("/public/forms/mentor")
@@ -1971,8 +1988,17 @@ def submit_public_mentee_form(payload: Dict[str, Any]) -> Dict[str, Any]:
     mentee_record["submittedAt"] = submitted_at
     mentee_record["submitted_at"] = submitted_at
 
-    # Save to Neon mentee_submissions table (best-effort — does not block form submission).
-    _save_mentee_form_to_db(data, submission_id, submitted_at)
+    # Save to Neon mentee_submissions table — blocks duplicate email submissions.
+    db_result = _save_mentee_form_to_db(data, submission_id, submitted_at)
+    if db_result.get("reason") == "duplicate_email":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "An application has already been submitted with this email address. "
+                "Each person may only submit one mentee application. "
+                "If you need to update your application, please contact the program administrator."
+            ),
+        )
 
     try:
         prefilled_link = (
