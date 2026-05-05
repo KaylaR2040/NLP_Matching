@@ -53,6 +53,8 @@ class MentorFormData {
 
   final TextEditingController currentCityController;
   String? currentState;
+  final TextEditingController currentCountryController;
+  bool? isInternational;
   final TextEditingController currentJobTitleController;
   final TextEditingController currentCompanyController;
 
@@ -76,6 +78,8 @@ class MentorFormData {
     List<DegreeEntry>? degrees,
     TextEditingController? currentCityController,
     this.currentState,
+    TextEditingController? currentCountryController,
+    this.isInternational,
     TextEditingController? currentJobTitleController,
     TextEditingController? currentCompanyController,
     this.previousMentorship,
@@ -93,6 +97,8 @@ class MentorFormData {
        pronouns = pronouns ?? [],
        degrees = degrees ?? [],
        currentCityController = currentCityController ?? TextEditingController(),
+       currentCountryController =
+           currentCountryController ?? TextEditingController(),
        currentJobTitleController =
            currentJobTitleController ?? TextEditingController(),
        currentCompanyController =
@@ -138,11 +144,16 @@ class MentorFormData {
         break;
       }
     }
-    if (currentCityController.text.trim().isEmpty) {
+    if (isInternational == null) {
+      errors.add('Please indicate whether you are located in the United States');
+    } else if (currentCityController.text.trim().isEmpty) {
       errors.add('Current city is required');
-    }
-    if (currentState == null || currentState!.trim().isEmpty) {
+    } else if (isInternational == false &&
+        (currentState == null || currentState!.trim().isEmpty)) {
       errors.add('Current state is required');
+    } else if (isInternational == true &&
+        currentCountryController.text.trim().isEmpty) {
+      errors.add('Current country is required');
     }
     if (currentJobTitleController.text.trim().isEmpty) {
       errors.add('Current job title is required');
@@ -187,12 +198,20 @@ class MentorFormData {
       'pronouns': pronouns,
       'degrees': degrees.map((d) => d.toJson()).toList(),
       'currentCity': currentCityController.text.trim(),
-      'currentState': currentState,
-      'currentCityState': [
-        currentCityController.text.trim(),
-        if (currentState != null && currentState!.trim().isNotEmpty)
-          currentState!.trim(),
-      ].join(', '),
+      'currentState': isInternational == true ? null : currentState,
+      'currentCountry': isInternational == true
+          ? currentCountryController.text.trim()
+          : null,
+      'currentCityState': isInternational == true
+          ? [
+              currentCityController.text.trim(),
+              currentCountryController.text.trim(),
+            ].where((s) => s.isNotEmpty == true).join(', ')
+          : [
+              currentCityController.text.trim(),
+              if (currentState != null && currentState!.trim().isNotEmpty)
+                currentState!.trim(),
+            ].join(', '),
       'currentJobTitle': currentJobTitleController.text.trim(),
       'currentCompany': currentCompanyController.text.trim(),
       'previousMentorship': previousMentorship,
@@ -217,6 +236,7 @@ class MentorFormData {
     lastNameController.dispose();
     linkedinController.dispose();
     currentCityController.dispose();
+    currentCountryController.dispose();
     currentJobTitleController.dispose();
     currentCompanyController.dispose();
     previousInvolvementController.dispose();

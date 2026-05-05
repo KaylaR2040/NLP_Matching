@@ -28,16 +28,24 @@ class FormOptions {
   static List<String> get phdPrograms => _loader.phdPrograms;
 
   static const List<String> industryFocusAreas = [
+    'Academia / research',
     'Artificial intelligence / machine learning',
-    'Communications / signal processing',
+    'ASIC Design & Verification',
+    'Consulting',
     'Cybersecurity',
     'Data science / analytics',
     'Embedded systems',
+    'Energy / utilities',
+    'Finance / fintech',
+    'Government / defense',
     'Hardware / electronics',
+    'Healthcare / medical devices',
+    'Manufacturing',
     'Other',
-    'Power / energy systems',
     'Robotics / autonomy',
     'Software engineering',
+    'Startup / entrepreneurship',
+    'Telecommunications',
   ];
 
   static const List<String> studentsCountOptions = ['1 student', '2 students'];
@@ -102,7 +110,12 @@ class FormOptions {
 
   static List<String> getGraduationYears() {
     final currentYear = DateTime.now().year;
-    return List.generate(31, (index) => (currentYear - 25 + index).toString());
+    const startYear = 1970;
+    final endYear = currentYear + 5;
+    return List.generate(
+      endYear - startYear + 1,
+      (index) => (endYear - index).toString(),
+    );
   }
 
   static List<String> getDegreeProgramsForLevels(List<String> levels) {

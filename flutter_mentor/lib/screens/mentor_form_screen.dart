@@ -35,8 +35,43 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
     final theme = Theme.of(context);
 
     if (_submitted) {
-      return const Scaffold(
-        body: ColoredBox(color: Colors.white, child: SizedBox.expand()),
+      return Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.check_circle_outline,
+                  size: 80,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  'Thank You!',
+                  style: theme.textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Your mentor application has been received. '
+                  'You will receive an email with further information from the Career & Alumni Specialist, Kaitlyn Godfrey.',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyLarge,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Questions? Contact: kngodfre@ncsu.edu',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       );
     }
 
@@ -289,48 +324,75 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
   }
 
   Widget _buildCurrentLocationFields(BuildContext context) {
-    return Row(
+    final theme = Theme.of(context);
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          flex: 2,
-          child: FormFieldWidgets.buildTextField(
-            context,
-            _formData.currentCityController,
-            'Current City',
-            true,
-          ),
+        FormFieldWidgets.buildYesNoField(
+          context,
+          'Are you currently located in the United States? *',
+          _formData.isInternational == null ? null : !_formData.isInternational!,
+          (isInUS) => setState(() {
+            _formData.isInternational = isInUS == null ? null : !isInUS;
+            _formData.currentState = null;
+          }),
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
+        if (_formData.isInternational != null) ...[
+          const SizedBox(height: 16),
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Current State *',
-                style: Theme.of(
+              Expanded(
+                flex: 2,
+                child: FormFieldWidgets.buildTextField(
                   context,
-                ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<String>(
-                initialValue: _formData.currentState,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  hintText: 'State',
+                  _formData.currentCityController,
+                  'Current City',
+                  true,
                 ),
-                items: FormOptions.usStates
-                    .map(
-                      (state) =>
-                          DropdownMenuItem(value: state, child: Text(state)),
-                    )
-                    .toList(),
-                onChanged: (value) =>
-                    setState(() => _formData.currentState = value),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _formData.isInternational == true
+                    ? FormFieldWidgets.buildTextField(
+                        context,
+                        _formData.currentCountryController,
+                        'Country',
+                        true,
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Current State *',
+                            style: theme.textTheme.bodyLarge?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          DropdownButtonFormField<String>(
+                            initialValue: _formData.currentState,
+                            decoration: const InputDecoration(
+                              border: OutlineInputBorder(),
+                              hintText: 'State',
+                            ),
+                            items: FormOptions.usStates
+                                .map(
+                                  (state) => DropdownMenuItem(
+                                    value: state,
+                                    child: Text(state),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (value) =>
+                                setState(() => _formData.currentState = value),
+                          ),
+                        ],
+                      ),
               ),
             ],
           ),
-        ),
+        ],
       ],
     );
   }
@@ -680,7 +742,24 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
 
     if (result['success'] == true) {
       if (mounted) {
-        setState(() => _submitted = true);
+        await showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => AlertDialog(
+            title: const Text('Thank You for Submitting!'),
+            content: const Text(
+              'Your mentor application has been received. '
+              'You will receive an email with further information from Kaitlyn Godfrey.',
+            ),
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Done'),
+              ),
+            ],
+          ),
+        );
+        if (mounted) setState(() => _submitted = true);
       }
     } else {
       if (mounted) {
