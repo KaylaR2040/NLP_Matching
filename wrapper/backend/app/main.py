@@ -879,8 +879,17 @@ def _revert_file_from_latest_backup(file_key: str) -> Dict[str, Any]:
                 "Save the current content first, then revert will be available."
             ),
         )
+    reverted_text = latest.read_text(encoding="utf-8")
     target = _dev_file_path(file_key)
-    _write_text_file(target, latest.read_text(encoding="utf-8"))
+    _write_text_file(target, reverted_text)
+    # Keep DB in sync so the reverted content is what gets served next load.
+    db_key = _CONFIG_LIST_KEYS.get(file_key)
+    if db_key and MENTOR_STORAGE_MODE == "postgres" and MENTOR_DATABASE_URL:
+        label = str(BASE_DEV_EDITABLE_FILES.get(file_key, {}).get("label", file_key))
+        try:
+            _write_config_list_db(db_key, label, reverted_text, "revert")
+        except Exception as exc:
+            LOG.warning("revert_db_sync_failed file_key=%s error=%s", file_key, exc)
     payload = _read_text_file(target)
     payload["reverted_from"] = _normalize_repo_path_for_api(str(latest), fallback="")
     return payload
@@ -933,8 +942,26 @@ def _save_dev_file_text(
     db_key = _CONFIG_LIST_KEYS.get(file_key)
     if db_key:
         label = str(BASE_DEV_EDITABLE_FILES.get(file_key, {}).get("label", file_key))
+        if MENTOR_STORAGE_MODE == "postgres" and MENTOR_DATABASE_URL:
+            # Seed the local file from the current DB content *before* the write so
+            # the backup captures what the user is about to overwrite.  Without this,
+            # _backup_current_file has nothing to copy and revert-last has no backup.
+            try:
+                file_path = _dev_file_path(file_key)
+                if not file_path.exists():
+                    current_db = _read_config_list_db(db_key)
+                    if current_db is not None:
+                        file_path.parent.mkdir(parents=True, exist_ok=True)
+                        _write_text_file(file_path, current_db)
+            except Exception as exc:
+                LOG.debug("save_dev_file_preseed_failed file_key=%s error=%s", file_key, exc)
         _write_config_list_db(db_key, label, text, actor)
         if MENTOR_STORAGE_MODE == "postgres" and MENTOR_DATABASE_URL:
+            # Create a local file backup so revert-last works within this session.
+            try:
+                _write_text_file_with_backup(_dev_file_path(file_key), text, file_key)
+            except Exception as exc:
+                LOG.debug("save_dev_file_backup_failed file_key=%s error=%s", file_key, exc)
             return _save_config_list_db_response(db_key, file_key, label, text)
     entry = _dev_file_entry(file_key)
     _require_durable_repo_write(entry)
