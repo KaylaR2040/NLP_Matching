@@ -689,45 +689,42 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
     return value;
   }
 
-  void _submitForm() async {
-    final confirmed = await _confirmSubmit();
-    if (!mounted) {
-      return;
-    }
-    if (!confirmed) {
-      return;
-    }
+  void _submitForm({bool forceUpdate = false}) async {
+    if (!forceUpdate) {
+      final confirmed = await _confirmSubmit();
+      if (!mounted) return;
+      if (!confirmed) return;
 
-    final errors = _formData.validate();
-
-    if (errors.isNotEmpty) {
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Form Incomplete'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Please complete the following:'),
-              const SizedBox(height: 8),
-              ...errors.map(
-                (error) => Padding(
-                  padding: const EdgeInsets.only(left: 8, top: 4),
-                  child: Text('• $error'),
+      final errors = _formData.validate();
+      if (errors.isNotEmpty) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Form Incomplete'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Please complete the following:'),
+                const SizedBox(height: 8),
+                ...errors.map(
+                  (error) => Padding(
+                    padding: const EdgeInsets.only(left: 8, top: 4),
+                    child: Text('• $error'),
+                  ),
                 ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
               ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('OK'),
-            ),
-          ],
-        ),
-      );
-      return;
+        );
+        return;
+      }
     }
 
     showDialog(
@@ -736,7 +733,10 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
 
-    final result = await ApiService.submitMentorApplication(_formData);
+    final result = await ApiService.submitMentorApplication(
+      _formData,
+      forceUpdate: forceUpdate,
+    );
 
     if (mounted) Navigator.pop(context);
 
@@ -747,9 +747,11 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
           barrierDismissible: false,
           builder: (_) => AlertDialog(
             title: const Text('Thank You for Submitting!'),
-            content: const Text(
-              'Your mentor application has been received. '
-              'You will receive an email with further information from Kaitlyn Godfrey.',
+            content: Text(
+              forceUpdate
+                  ? 'Your submission has been updated successfully.'
+                  : 'Your mentor application has been received. '
+                      'You will receive an email with further information from Kaitlyn Godfrey.',
             ),
             actions: [
               FilledButton(
@@ -760,6 +762,33 @@ class _MentorFormScreenState extends State<MentorFormScreen> {
           ),
         );
         if (mounted) setState(() => _submitted = true);
+      }
+    } else if (result['error_code'] == 'duplicate_email') {
+      if (!mounted) return;
+      final email = result['email']?.toString() ?? _formData.emailController.text.trim();
+      final shouldUpdate = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Already Submitted'),
+          content: Text(
+            'We already have an application on file for $email.\n\n'
+            'Would you like to update your existing submission with this new information, '
+            'or cancel and keep your current submission?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Keep Existing'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Update Submission'),
+            ),
+          ],
+        ),
+      );
+      if (shouldUpdate == true && mounted) {
+        _submitForm(forceUpdate: true);
       }
     } else {
       if (mounted) {

@@ -1692,11 +1692,27 @@ def api_health() -> Dict[str, str]:
     return health()
 
 
-def _save_mentor_form_to_db(data: Dict[str, Any], submission_id: str, submitted_at: str) -> None:
+def _find_mentor_by_email(email: str) -> Optional[Dict[str, Any]]:
+    normalized = email.strip().lower()
+    if not normalized:
+        return None
+    for record in MENTOR_STORE.load_records():
+        if str(record.get("email", "")).strip().lower() == normalized:
+            return record
+    return None
+
+
+def _save_mentor_form_to_db(
+    data: Dict[str, Any],
+    submission_id: str,
+    submitted_at: str,
+    *,
+    force_update: bool = False,
+) -> Dict[str, Any]:
     """Save a public mentor form submission to the mentors table via MENTOR_STORE.
-    Non-fatal: logs warning on failure so the form response is still returned."""
+    Returns a result dict: {saved, reason, existing_mentor_id}."""
     if MENTOR_STORAGE_MODE != "postgres" or not MENTOR_DATABASE_URL:
-        return
+        return {"saved": False, "reason": "no_db"}
     try:
         first = str(data.get("firstName", "")).strip()
         last = str(data.get("lastName", "")).strip()
@@ -1706,7 +1722,7 @@ def _save_mentor_form_to_db(data: Dict[str, Any], submission_id: str, submitted_
             "degreesSummary", "degrees", "industryFocusArea", "professionalExperience",
             "aboutYourself", "studentsInterested", "pronouns", "previousMentorship",
             "whyInterested", "previousInvolvement", "previousInvolvementOrgs",
-            "id", "submissionId", "submittedAt", "submitted_at",
+            "id", "submissionId", "submittedAt", "submitted_at", "forceUpdate",
         }
         record: Dict[str, Any] = {
             "mentor_id": submission_id,
@@ -1729,9 +1745,25 @@ def _save_mentor_form_to_db(data: Dict[str, Any], submission_id: str, submitted_
             "source_timestamp": submitted_at,
             "extra_fields": {k: v for k, v in data.items() if k not in known},
         }
+        if force_update:
+            existing = _find_mentor_by_email(record["email"])
+            if existing:
+                existing_id = str(existing.get("mentor_id", ""))
+                MENTOR_STORE.update(existing_id, record, actor="public_form_update")
+                return {"saved": True, "updated": True, "existing_mentor_id": existing_id}
         MENTOR_STORE.create(record, actor="public_form")
+        return {"saved": True, "updated": False}
+    except ValueError as exc:
+        msg = str(exc)
+        if "already exists" in msg.lower():
+            existing = _find_mentor_by_email(str(data.get("email", "")).strip().lower())
+            existing_id = str(existing.get("mentor_id", "")) if existing else ""
+            return {"saved": False, "reason": "duplicate_email", "existing_mentor_id": existing_id}
+        LOG.warning("mentor_form_db_save_failed mentor_id=%s error=%s", submission_id, exc)
+        return {"saved": False, "reason": "error"}
     except Exception as exc:
         LOG.warning("mentor_form_db_save_failed mentor_id=%s error=%s", submission_id, exc)
+        return {"saved": False, "reason": "error"}
 
 
 def _save_mentee_form_to_db(data: Dict[str, Any], submission_id: str, submitted_at: str) -> None:
@@ -1802,6 +1834,7 @@ def public_mentor_form_readonly_probe() -> List[Any]:
 @app.post("/public/forms/mentor")
 def submit_public_mentor_form(payload: Dict[str, Any]) -> Dict[str, Any]:
     data = payload if isinstance(payload, dict) else {}
+    force_update = bool(data.get("forceUpdate", False))
     submission_id = _derive_submission_id(data)
     submitted_at = _derive_submitted_at(data)
 
@@ -1812,8 +1845,16 @@ def submit_public_mentor_form(payload: Dict[str, Any]) -> Dict[str, Any]:
     mentor_record["submitted_at"] = submitted_at
     mentor_record["degreesSummary"] = _build_degrees_summary(data.get("degrees"))
 
-    # Save to Neon mentors table (best-effort — does not block form submission).
-    _save_mentor_form_to_db(data, submission_id, submitted_at)
+    db_result = _save_mentor_form_to_db(data, submission_id, submitted_at, force_update=force_update)
+    if db_result.get("reason") == "duplicate_email":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_code": "duplicate_email",
+                "existing_mentor_id": db_result.get("existing_mentor_id", ""),
+                "email": str(data.get("email", "")).strip().lower(),
+            },
+        )
 
     return {
         "success": True,

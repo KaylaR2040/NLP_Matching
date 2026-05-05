@@ -30,13 +30,16 @@ class ApiService {
     throw Exception('Config fetch failed for "$key": HTTP ${response.statusCode}');
   }
 
-  /// Submit a mentor application to the backend
+  /// Submit a mentor application to the backend.
+  /// Pass [forceUpdate] to overwrite an existing submission with the same email.
   static Future<Map<String, dynamic>> submitMentorApplication(
-    MentorFormData formData,
-  ) async {
+    MentorFormData formData, {
+    bool forceUpdate = false,
+  }) async {
     try {
       final url = Uri.parse('$_backendApiBaseUrl/public/forms/mentor');
       final jsonData = formData.toJson();
+      if (forceUpdate) jsonData['forceUpdate'] = true;
 
       final response = await http.post(
         url,
@@ -54,6 +57,15 @@ class ApiService {
           };
         }
         return {'success': true, 'data': responseData};
+      } else if (response.statusCode == 409) {
+        final errorData = _decodeJsonBody(response);
+        final detail = errorData?['detail'];
+        final detailMap = detail is Map<String, dynamic> ? detail : <String, dynamic>{};
+        return {
+          'success': false,
+          'error_code': 'duplicate_email',
+          'email': detailMap['email']?.toString() ?? formData.emailController.text.trim(),
+        };
       } else {
         final errorData = _decodeJsonBody(response);
         return {
