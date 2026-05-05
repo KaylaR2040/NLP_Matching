@@ -48,6 +48,7 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
   final Set<PairKey> _rejectedPairs = {};
   final Set<PairKey> _exclusionPairs = {};
   final Map<PairKey, double> _pairMatchPercent = {};
+  final Map<PairKey, String> _pairMatchReason = {};
 
   String? _selectedExclusionMenteeId;
   String? _selectedExclusionMentorId;
@@ -158,6 +159,7 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
     _menteesById.clear();
     _unmatchedMenteeIds.clear();
     _pairMatchPercent.clear();
+    _pairMatchReason.clear();
 
     void ensureMentor(dynamic row) {
       final mentorId = (row['mentor_id'] ?? '').toString();
@@ -264,7 +266,13 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
       return;
     }
 
-    _pairMatchPercent[PairKey(menteeId: menteeId, mentorId: mentorId)] = value;
+    final key = PairKey(menteeId: menteeId, mentorId: mentorId);
+    _pairMatchPercent[key] = value;
+
+    final reason = (row['match_reason'] ?? '').toString().trim();
+    if (reason.isNotEmpty) {
+      _pairMatchReason[key] = reason;
+    }
   }
 
   double? _matchPercentForPair(String menteeId, String mentorId) {
@@ -406,6 +414,7 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
         final matchPercent = _matchPercentForPair(menteeId, mentor.mentorId);
         final isLocked = _lockedPairs
             .contains(PairKey(menteeId: menteeId, mentorId: mentor.mentorId));
+        final pairKey = PairKey(menteeId: menteeId, mentorId: mentor.mentorId);
         rows.add({
           'mentor_id': mentor.mentorId,
           'mentor_name': mentor.mentorName,
@@ -414,6 +423,7 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
           'match_percent': matchPercent?.toStringAsFixed(2) ?? '',
           'match_band': _matchBand(matchPercent),
           'lock_status': isLocked ? 'locked' : 'unlocked',
+          'match_reason': _pairMatchReason[pairKey] ?? '',
         });
       }
     }
@@ -428,6 +438,7 @@ class _MatchingDashboardScreenState extends State<MatchingDashboardScreen> {
         'match_percent': '',
         'match_band': '',
         'lock_status': 'unlocked',
+        'match_reason': '',
       });
     }
 
