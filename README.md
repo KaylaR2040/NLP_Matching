@@ -1,6 +1,7 @@
 # ECE Mentor-Mentee Matching System
 
-An NLP-powered platform that matches NC State ECE students with alumni mentors. Built by Kayla Radu for the NC State ECE department's mentor-mentee program.
+An NLP-powered platform that matches NC State ECE students with alumni mentors. 
+Built for the Electrical and Computer Engineering Department
 
 The system handles the full pipeline — mentors sign up via a public form, admins run an NLP matching algorithm against a mentee list, review and adjust the ranked assignments, then export to Excel. All data is stored in a Postgres database; no spreadsheet management required.
 
