@@ -111,20 +111,35 @@ def _scrape_linkedin_page_metadata(
     *,
     timeout_seconds: float,
 ) -> Dict[str, Any]:
-    """GET the LinkedIn profile page and parse basic metadata from HTML meta tags.
+    """GET the LinkedIn profile page and extract job title, company, and photo.
 
-    Works even when the profile uses a custom vanity URL that doesn't contain the
-    person's name — the og:title and <title> tags still hold their real name and role.
-    LinkedIn may return an authwall redirect for some profiles; we detect that and
-    return an empty dict so callers can fall back gracefully.
+    Uses full browser-navigation headers (Sec-Fetch-*) so LinkedIn is more
+    likely to serve the actual profile rather than an authwall.  Parses three
+    sources in priority order:
+      1. <meta name="description"> — often "Title at Company · Experience: …"
+      2. og:title / <title>        — "Name - Title - Company | LinkedIn"
+      3. JSON-LD structured data   — when LinkedIn includes it
     """
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         ),
+        "Accept": (
+            "text/html,application/xhtml+xml,application/xml;q=0.9,"
+            "image/avif,image/webp,image/apng,*/*;q=0.8"
+        ),
         "Accept-Language": "en-US,en;q=0.9",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Cache-Control": "max-age=0",
+        # A Google referer sometimes prompts LinkedIn to serve public profile content.
+        "Referer": "https://www.google.com/",
     }
     try:
         response = requests.get(
@@ -140,7 +155,6 @@ def _scrape_linkedin_page_metadata(
     if response.status_code >= 400:
         return {}
 
-    # LinkedIn redirects unauthenticated users to an authwall for non-public profiles.
     final_url = response.url if hasattr(response, "url") else linkedin_url
     if any(kw in str(final_url).lower() for kw in ("authwall", "signup", "login", "checkpoint")):
         LOG.debug("linkedin_page_scrape_blocked url=%s redirected_to=%s", linkedin_url, final_url)
@@ -149,7 +163,35 @@ def _scrape_linkedin_page_metadata(
     html = response.text
     result: Dict[str, Any] = {}
 
-    # og:title → "Name | LinkedIn" or "Name - Job Title - Company | LinkedIn"
+    # ── 1. <meta name="description"> ─────────────────────────────────────────
+    # LinkedIn's description often reads: "Automation Engineer at Sipe Solutions
+    # · Experience: Sipe Solutions · …"  — this is the most reliable source.
+    desc_match = re.search(
+        r'<meta[^>]+name=["\']description["\'][^>]+content=["\'](.*?)["\']',
+        html,
+        re.IGNORECASE,
+    )
+    if not desc_match:
+        # Attribute order can be reversed.
+        desc_match = re.search(
+            r'<meta[^>]+content=["\'](.*?)["\'][^>]+name=["\']description["\']',
+            html,
+            re.IGNORECASE,
+        )
+    if desc_match:
+        desc = _strip_tags(unescape(desc_match.group(1))).strip()
+        # Pattern: "Title at Company · …" or "Title at Company. View …"
+        desc_job_match = re.search(
+            r"^(?P<title>[A-Za-z0-9 ,&/\-\+\.]+?)\s+at\s+(?P<company>[A-Za-z0-9 ,&/\-\.']+?)"
+            r"(?:\s*[·•\|\.]\s*|\s*View\s|\s*$)",
+            desc,
+            re.IGNORECASE,
+        )
+        if desc_job_match:
+            result["current_job_title"] = _clean(desc_job_match.group("title"))
+            result["current_company"] = _clean(desc_job_match.group("company"))
+
+    # ── 2. og:title / <title> ────────────────────────────────────────────────
     og_title_match = re.search(
         r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\'](.*?)["\']',
         html,
@@ -160,14 +202,35 @@ def _scrape_linkedin_page_metadata(
         og_title = re.sub(r"\s*\|\s*LinkedIn\s*$", "", og_title, flags=re.IGNORECASE).strip()
         result["og_title"] = og_title
 
-    # <title> → "Name - Job Title - Company | LinkedIn"
     title_tag_match = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
     if title_tag_match:
         page_title = _strip_tags(unescape(title_tag_match.group(1)))
         page_title = re.sub(r"\s*\|\s*LinkedIn\s*$", "", page_title, flags=re.IGNORECASE).strip()
         result["page_title"] = page_title
 
-    # og:image → profile photo hosted on LinkedIn's CDN
+    # Parse title text only if description parsing didn't already get both fields.
+    if not result.get("current_job_title") or not result.get("current_company"):
+        title_text = result.get("og_title") or result.get("page_title", "")
+        if title_text:
+            after_name = re.split(r"\s*[-–|]\s*", title_text, maxsplit=1)
+            headline = after_name[1].strip() if len(after_name) >= 2 else title_text
+            match = re.search(
+                r"(?P<title>.+?)\s+at\s+(?P<company>[A-Za-z0-9&,. \-]{2,})",
+                headline,
+                flags=re.IGNORECASE,
+            )
+            if match:
+                if not result.get("current_job_title"):
+                    result["current_job_title"] = _clean(match.group("title"))
+                if not result.get("current_company"):
+                    result["current_company"] = _clean(match.group("company"))
+            elif " - " in headline and not result.get("current_job_title"):
+                parts = headline.split(" - ", 1)
+                result["current_job_title"] = _clean(parts[0])
+                if len(parts) > 1 and not result.get("current_company"):
+                    result["current_company"] = _clean(parts[1])
+
+    # ── 3. og:image ──────────────────────────────────────────────────────────
     og_image_match = re.search(
         r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\'](.*?)["\']',
         html,
@@ -178,26 +241,29 @@ def _scrape_linkedin_page_metadata(
         if image_url.startswith("http") and "linkedin" in image_url:
             result["profile_photo_url"] = image_url
 
-    # Parse job title + company out of the title text.
-    title_text = result.get("og_title") or result.get("page_title", "")
-    if title_text:
-        # Strip leading "Name - " portion (first segment before a dash/pipe).
-        after_name = re.split(r"\s*[-–|]\s*", title_text, maxsplit=1)
-        headline = after_name[1].strip() if len(after_name) >= 2 else title_text
-
-        match = re.search(
-            r"(?P<title>.+?)\s+at\s+(?P<company>[A-Za-z0-9&,. \-]{2,})",
-            headline,
-            flags=re.IGNORECASE,
+    # ── 4. JSON-LD structured data ───────────────────────────────────────────
+    if not result.get("current_job_title") or not result.get("current_company"):
+        jsonld_match = re.search(
+            r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+            html,
+            re.IGNORECASE | re.DOTALL,
         )
-        if match:
-            result["current_job_title"] = _clean(match.group("title"))
-            result["current_company"] = _clean(match.group("company"))
-        elif " - " in headline:
-            parts = headline.split(" - ", 1)
-            result["current_job_title"] = _clean(parts[0])
-            if len(parts) > 1:
-                result["current_company"] = _clean(parts[1])
+        if jsonld_match:
+            try:
+                import json as _json
+                ld = _json.loads(jsonld_match.group(1))
+                if isinstance(ld, dict):
+                    job_title = _clean(ld.get("jobTitle", ""))
+                    employer = ld.get("worksFor", {})
+                    company = _clean(
+                        employer.get("name", "") if isinstance(employer, dict) else ""
+                    )
+                    if job_title and not result.get("current_job_title"):
+                        result["current_job_title"] = job_title
+                    if company and not result.get("current_company"):
+                        result["current_company"] = company
+            except Exception:
+                pass
 
     LOG.info(
         "linkedin_page_scrape_result url=%s extracted_fields=%s",
@@ -205,6 +271,88 @@ def _scrape_linkedin_page_metadata(
         sorted(k for k in result if k not in {"og_title", "page_title"}),
     )
     return result
+
+
+def _bing_search_linkedin_profile(
+    slug: str,
+    *,
+    timeout_seconds: float,
+    user_agent: str,
+) -> Dict[str, Any]:
+    """Search Bing for a LinkedIn profile and extract title/company from results.
+
+    Used as a fallback when DuckDuckGo returns no usable results.
+    """
+    query = f'site:linkedin.com/in "{slug}"'
+    headers = {
+        "User-Agent": user_agent,
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    }
+    try:
+        response = requests.get(
+            "https://www.bing.com/search",
+            params={"q": query},
+            headers=headers,
+            timeout=timeout_seconds,
+        )
+    except Exception as exc:
+        LOG.debug("bing_search_failed slug=%s error=%s", slug, exc)
+        return {}
+
+    if response.status_code >= 400:
+        return {}
+
+    html = response.text
+    # Bing result titles are in <h2><a href="…">Title text</a></h2>
+    title_matches = re.findall(
+        r'<h2[^>]*><a[^>]+href="([^"]*linkedin\.com/in/[^"]*)"[^>]*>(.*?)</a>',
+        html,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    snippet_matches = re.findall(
+        r'<p[^>]*class="[^"]*b_lineclamp[^"]*"[^>]*>(.*?)</p>',
+        html,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+
+    if not title_matches:
+        return {}
+
+    top_url = _extract_redirect_target(title_matches[0][0])
+    if "linkedin.com/in/" not in top_url.lower():
+        return {}
+
+    top_title = _strip_tags(unescape(title_matches[0][1]))
+    top_title = re.sub(r"\s*\|\s*LinkedIn\s*$", "", top_title, flags=re.IGNORECASE).strip()
+    top_snippet = _strip_tags(unescape(snippet_matches[0])) if snippet_matches else ""
+
+    updates: Dict[str, Any] = {}
+    for text in [top_title, top_snippet]:
+        if not text:
+            continue
+        # Strip leading "Name - " segment
+        after_name = re.split(r"\s*[-–]\s*", text, maxsplit=1)
+        headline = after_name[1].strip() if len(after_name) >= 2 else text
+        match = re.search(
+            r"(?P<title>.+?)\s+at\s+(?P<company>[A-Za-z0-9&,. \-]{2,})",
+            headline,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            if not updates.get("current_job_title"):
+                updates["current_job_title"] = _clean(match.group("title"))
+            if not updates.get("current_company"):
+                updates["current_company"] = _clean(match.group("company"))
+        if updates.get("current_job_title") and updates.get("current_company"):
+            break
+
+    LOG.info(
+        "bing_search_result slug=%s extracted_fields=%s",
+        slug,
+        sorted(updates.keys()),
+    )
+    return updates
 
 
 def _resolve_public_profile_photo_url(
@@ -518,7 +666,78 @@ class DuckDuckGoLinkedInEnrichmentProvider:
                 provider_metadata={"provider": self.name},
             )
 
+        metadata: Dict[str, Any] = {"provider": self.name, "slug": slug}
+        updates: Dict[str, Any] = {}
+
+        # ── Step 1: visit the actual LinkedIn page first ──────────────────────
+        # This is more reliable than search — we go straight to the profile and
+        # parse the <meta name="description"> which often contains
+        # "Title at Company · Experience: …" in plain text.
+        page_timeout = max(1.0, self._timeout_seconds * 0.5)
+        page_meta = _scrape_linkedin_page_metadata(
+            linkedin_url, timeout_seconds=page_timeout
+        )
+        if page_meta.get("current_job_title"):
+            updates["current_job_title"] = page_meta["current_job_title"]
+        if page_meta.get("current_company"):
+            updates["current_company"] = page_meta["current_company"]
+        if page_meta.get("profile_photo_url"):
+            updates["profile_photo_url"] = page_meta["profile_photo_url"]
+        metadata["page_scrape"] = {
+            k: v for k, v in page_meta.items() if k not in {"og_title", "page_title"}
+        }
+
+        # If we already have both title and company, return early.
+        if updates.get("current_job_title") and updates.get("current_company"):
+            LOG.info(
+                "linkedin_enrichment_page_scrape_success slug=%s fields=%s",
+                slug,
+                sorted(updates.keys()),
+            )
+            return LinkedInEnrichmentResult(
+                status="partial",
+                message="LinkedIn enrichment completed from public profile page.",
+                updates=updates,
+                provider_metadata=metadata,
+            )
+
+        # ── Step 2: DuckDuckGo search ─────────────────────────────────────────
         query = f'site:linkedin.com/in "{slug}"'
+        ddg_updates = self._search_ddg(slug, query)
+        metadata["ddg_query"] = query
+        metadata["ddg_extracted"] = sorted(ddg_updates.keys())
+        for key, value in ddg_updates.items():
+            if not updates.get(key):
+                updates[key] = value
+
+        # ── Step 3: Bing search fallback ──────────────────────────────────────
+        # Try Bing when DDG didn't give us title+company (different index coverage).
+        if not (updates.get("current_job_title") and updates.get("current_company")):
+            bing_updates = _bing_search_linkedin_profile(
+                slug,
+                timeout_seconds=max(1.0, self._timeout_seconds * 0.6),
+                user_agent=self._user_agent,
+            )
+            metadata["bing_extracted"] = sorted(bing_updates.keys())
+            for key, value in bing_updates.items():
+                if not updates.get(key):
+                    updates[key] = value
+
+        if not updates:
+            return LinkedInEnrichmentResult(
+                status="failed",
+                message="No profile data found from page, DuckDuckGo, or Bing.",
+                provider_metadata=metadata,
+            )
+
+        return LinkedInEnrichmentResult(
+            status="partial",
+            message="LinkedIn enrichment completed from indexed public profile data.",
+            updates=updates,
+            provider_metadata=metadata,
+        )
+
+    def _search_ddg(self, slug: str, query: str) -> Dict[str, Any]:
         headers = {
             "User-Agent": self._user_agent,
             "Accept-Language": "en-US,en;q=0.9",
@@ -531,31 +750,16 @@ class DuckDuckGoLinkedInEnrichmentProvider:
                 timeout=self._timeout_seconds,
             )
         except Exception as exc:
-            return LinkedInEnrichmentResult(
-                status="failed",
-                message=f"Search provider request failed: {exc}",
-                provider_metadata={"provider": self.name, "query": query},
-            )
+            LOG.debug("ddg_search_failed slug=%s error=%s", slug, exc)
+            return {}
 
-        metadata: Dict[str, Any] = {
-            "provider": self.name,
-            "http_status": response.status_code,
-            "endpoint": self._endpoint,
-            "query": query,
-        }
         LOG.info(
-            "linkedin_provider_request provider=%s endpoint=%s query=%s status=%s",
-            self.name,
-            self._endpoint,
-            query,
+            "linkedin_provider_request provider=duckduckgo slug=%s status=%s",
+            slug,
             response.status_code,
         )
         if response.status_code >= 400:
-            return LinkedInEnrichmentResult(
-                status="failed",
-                message=f"Search provider returned HTTP {response.status_code}.",
-                provider_metadata=metadata,
-            )
+            return {}
 
         html_text = response.text
         title_matches = re.findall(
@@ -570,25 +774,15 @@ class DuckDuckGoLinkedInEnrichmentProvider:
         )
 
         if not title_matches:
-            return LinkedInEnrichmentResult(
-                status="failed",
-                message="Search provider returned no LinkedIn profile matches.",
-                provider_metadata=metadata,
-            )
+            return {}
 
         top_href, top_title_raw = title_matches[0]
         top_result_url = _extract_redirect_target(top_href)
         if "linkedin.com/in/" not in top_result_url.lower():
-            return LinkedInEnrichmentResult(
-                status="failed",
-                message="Search provider did not return a LinkedIn profile result.",
-                provider_metadata=metadata,
-            )
-        top_title = _strip_tags(top_title_raw)
-        top_snippet = _strip_tags(snippet_matches[0] if snippet_matches else "")
-        metadata["top_result_url"] = top_result_url
-        metadata["top_result_title"] = top_title
-        metadata["top_result_snippet"] = top_snippet
+            return {}
+
+        top_title = _strip_tags(unescape(top_title_raw))
+        top_snippet = _strip_tags(unescape(snippet_matches[0])) if snippet_matches else ""
 
         updates: Dict[str, Any] = {}
         headline = top_title
@@ -598,29 +792,19 @@ class DuckDuckGoLinkedInEnrichmentProvider:
             _, maybe_headline = headline.split(" - ", 1)
             headline = maybe_headline.strip()
 
-        candidate_texts = [headline, top_snippet]
-        company = ""
-        title = ""
-        for text in candidate_texts:
+        for text in [headline, top_snippet]:
             match = re.search(
                 r"(?P<title>.+?)\s+at\s+(?P<company>[A-Za-z0-9&,. \-]{2,})",
                 text,
                 flags=re.IGNORECASE,
             )
             if match:
-                maybe_title = _clean(match.group("title"))
-                maybe_company = _clean(match.group("company"))
-                if maybe_title and not title:
-                    title = maybe_title
-                if maybe_company and not company:
-                    company = maybe_company
-                if title and company:
-                    break
-
-        if company:
-            updates["current_company"] = company
-        if title:
-            updates["current_job_title"] = title
+                if not updates.get("current_job_title"):
+                    updates["current_job_title"] = _clean(match.group("title"))
+                if not updates.get("current_company"):
+                    updates["current_company"] = _clean(match.group("company"))
+            if updates.get("current_job_title") and updates.get("current_company"):
+                break
 
         location_match = re.search(
             r"(?:Location:|location:)\s*([A-Za-z0-9,.\- ]{2,})",
@@ -636,19 +820,7 @@ class DuckDuckGoLinkedInEnrichmentProvider:
                     updates["current_city"] = city_state[0]
                     updates["current_state"] = city_state[1]
 
-        if not updates:
-            return LinkedInEnrichmentResult(
-                status="failed",
-                message="Search provider returned no usable profile fields.",
-                provider_metadata=metadata,
-            )
-
-        return LinkedInEnrichmentResult(
-            status="partial",
-            message="LinkedIn enrichment completed from indexed public profile data.",
-            updates=updates,
-            provider_metadata=metadata,
-        )
+        return updates
 
 
 def _candidate_payloads(payload: Dict[str, Any]) -> list[Dict[str, Any]]:
