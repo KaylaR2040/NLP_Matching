@@ -16,6 +16,7 @@ class MenteeInterestFormScreen extends StatefulWidget {
 class _MenteeInterestFormScreenState extends State<MenteeInterestFormScreen> {
   final _formKey = GlobalKey<FormState>();
   late final MenteeFormData _formData;
+  bool _submitted = false;
 
   @override
   void initState() {
@@ -26,6 +27,40 @@ class _MenteeInterestFormScreenState extends State<MenteeInterestFormScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+
+    if (_submitted) {
+      return Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.check_circle_outline,
+                  size: 80,
+                  color: NCSUColors.reynoldsRed,
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  'Thank You!',
+                  style: theme.textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Your mentee interest form has been submitted. '
+                  'You will be matched with a mentor soon.',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyLarge,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       body: Form(
@@ -446,27 +481,7 @@ class _MenteeInterestFormScreenState extends State<MenteeInterestFormScreen> {
     if (mounted) Navigator.pop(context);
 
     if (result['success'] == true) {
-      if (mounted) {
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Success'),
-            content: const Text(
-              'Your mentee interest form has been submitted successfully. '
-              'You will be matched with a mentor soon.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  Navigator.pop(context);
-                },
-                child: const Text('OK'),
-              ),
-            ],
-          ),
-        );
-      }
+      if (mounted) setState(() => _submitted = true);
     } else {
       if (mounted) {
         showDialog(
