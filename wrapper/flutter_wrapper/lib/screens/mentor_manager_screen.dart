@@ -495,7 +495,8 @@ class _MentorManagerScreenState extends State<MentorManagerScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Delete Selected Mentors'),
         content: Text(
-          'Delete $count selected mentor record${count == 1 ? '' : 's'} from Mentor Manager?',
+          "Delete $count selected mentor record${count == 1 ? '' : 's'}? "
+          "This will permanently remove them from the database and cannot be undone.",
         ),
         actions: [
           TextButton(
