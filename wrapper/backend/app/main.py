@@ -871,7 +871,14 @@ def _latest_backup_path(file_key: str) -> Optional[Path]:
 def _revert_file_from_latest_backup(file_key: str) -> Dict[str, Any]:
     latest = _latest_backup_path(file_key)
     if latest is None:
-        raise HTTPException(status_code=404, detail="No backup exists for this file")
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No backup exists for '{file_key}' yet. "
+                "A backup is created automatically the first time you save the file through this interface. "
+                "Save the current content first, then revert will be available."
+            ),
+        )
     target = _dev_file_path(file_key)
     _write_text_file(target, latest.read_text(encoding="utf-8"))
     payload = _read_text_file(target)

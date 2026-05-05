@@ -5,7 +5,7 @@ from typing import Dict, List, Set
 FACTOR_KEYS = ("industry", "degree", "personality", "identity", "orgs", "grad_year")
 
 DEFAULT_BASE_WEIGHTS = {
-    "industry": 2.5,
+    "industry": 5.0,   # primary factor — must dominate all others
     "degree": 2.0,
     "personality": 1.5,
     "identity": 1.0,
@@ -17,14 +17,17 @@ IMPORTANCE_MULTIPLIER = 2.0
 MIN_WEIGHT = 0.01
 
 # Score calibration knobs.
-INDUSTRY_HARD_FLOOR = 0.20
-LOW_INDUSTRY_PENALTY = 0.80
+# Raised floor + harsher penalty so mismatched industries can't sneak through
+# on text volume alone.
+INDUSTRY_HARD_FLOOR = 0.35
+LOW_INDUSTRY_PENALTY = 0.50
 # Industry score = broad_semantic * BROAD + niche_keyword * NICHE + role_relevance * ROLE_RELEVANCE
-INDUSTRY_BROAD_WEIGHT = 0.40   # semantic embedding similarity (what broad field they're in)
-INDUSTRY_NICHE_WEIGHT = 0.35   # weighted Jaccard over canonical domain tokens (what subfield)
+# Niche keyword overlap is now the primary driver (keyword match > text volume).
+INDUSTRY_BROAD_WEIGHT = 0.25   # semantic embedding similarity — reduced so long responses don't inflate score
+INDUSTRY_NICHE_WEIGHT = 0.50   # weighted Jaccard over canonical domain tokens — primary signal
 ROLE_RELEVANCE_WEIGHT = 0.15   # mentor's job title vs mentee's career goal
 # Penalty applied when mentee/mentor share a cluster but no exact token (adjacent ≠ exact).
-ADJACENCY_PENALTY = 0.18
+ADJACENCY_PENALTY = 0.22
 
 CORE_MATCH_SHARE = 0.95
 EXTRA_MATCH_SHARE = 0.05

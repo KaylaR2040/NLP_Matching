@@ -106,6 +106,107 @@ def _extract_redirect_target(url: str) -> str:
     return unquote(target[0])
 
 
+def _scrape_linkedin_page_metadata(
+    linkedin_url: str,
+    *,
+    timeout_seconds: float,
+) -> Dict[str, Any]:
+    """GET the LinkedIn profile page and parse basic metadata from HTML meta tags.
+
+    Works even when the profile uses a custom vanity URL that doesn't contain the
+    person's name — the og:title and <title> tags still hold their real name and role.
+    LinkedIn may return an authwall redirect for some profiles; we detect that and
+    return an empty dict so callers can fall back gracefully.
+    """
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    }
+    try:
+        response = requests.get(
+            linkedin_url,
+            headers=headers,
+            timeout=timeout_seconds,
+            allow_redirects=True,
+        )
+    except Exception as exc:
+        LOG.debug("linkedin_page_scrape_failed url=%s error=%s", linkedin_url, exc)
+        return {}
+
+    if response.status_code >= 400:
+        return {}
+
+    # LinkedIn redirects unauthenticated users to an authwall for non-public profiles.
+    final_url = response.url if hasattr(response, "url") else linkedin_url
+    if any(kw in str(final_url).lower() for kw in ("authwall", "signup", "login", "checkpoint")):
+        LOG.debug("linkedin_page_scrape_blocked url=%s redirected_to=%s", linkedin_url, final_url)
+        return {}
+
+    html = response.text
+    result: Dict[str, Any] = {}
+
+    # og:title → "Name | LinkedIn" or "Name - Job Title - Company | LinkedIn"
+    og_title_match = re.search(
+        r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\'](.*?)["\']',
+        html,
+        re.IGNORECASE,
+    )
+    if og_title_match:
+        og_title = unescape(og_title_match.group(1))
+        og_title = re.sub(r"\s*\|\s*LinkedIn\s*$", "", og_title, flags=re.IGNORECASE).strip()
+        result["og_title"] = og_title
+
+    # <title> → "Name - Job Title - Company | LinkedIn"
+    title_tag_match = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
+    if title_tag_match:
+        page_title = _strip_tags(unescape(title_tag_match.group(1)))
+        page_title = re.sub(r"\s*\|\s*LinkedIn\s*$", "", page_title, flags=re.IGNORECASE).strip()
+        result["page_title"] = page_title
+
+    # og:image → profile photo hosted on LinkedIn's CDN
+    og_image_match = re.search(
+        r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\'](.*?)["\']',
+        html,
+        re.IGNORECASE,
+    )
+    if og_image_match:
+        image_url = unescape(og_image_match.group(1))
+        if image_url.startswith("http") and "linkedin" in image_url:
+            result["profile_photo_url"] = image_url
+
+    # Parse job title + company out of the title text.
+    title_text = result.get("og_title") or result.get("page_title", "")
+    if title_text:
+        # Strip leading "Name - " portion (first segment before a dash/pipe).
+        after_name = re.split(r"\s*[-–|]\s*", title_text, maxsplit=1)
+        headline = after_name[1].strip() if len(after_name) >= 2 else title_text
+
+        match = re.search(
+            r"(?P<title>.+?)\s+at\s+(?P<company>[A-Za-z0-9&,. \-]{2,})",
+            headline,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            result["current_job_title"] = _clean(match.group("title"))
+            result["current_company"] = _clean(match.group("company"))
+        elif " - " in headline:
+            parts = headline.split(" - ", 1)
+            result["current_job_title"] = _clean(parts[0])
+            if len(parts) > 1:
+                result["current_company"] = _clean(parts[1])
+
+    LOG.info(
+        "linkedin_page_scrape_result url=%s extracted_fields=%s",
+        linkedin_url,
+        sorted(k for k in result if k not in {"og_title", "page_title"}),
+    )
+    return result
+
+
 def _resolve_public_profile_photo_url(
     linkedin_url: str,
     *,
@@ -888,6 +989,45 @@ class LinkedInEnrichmentService:
                     mentor_id,
                     self._provider.name,
                     photo_url,
+                )
+
+        # Direct LinkedIn page scrape — works for custom vanity URLs where the slug
+        # does not contain the person's name. Fills any fields still missing after
+        # the provider + photo lookups. Skipped if the provider is clearly disabled
+        # or if LinkedIn returns an authwall.
+        page_scrape_enabled = _env_flag("WRAPPER_LINKEDIN_PAGE_SCRAPE_ENABLED", True)
+        missing_profile_fields = not result.updates.get("current_job_title") or not result.updates.get("current_company")
+        if (
+            page_scrape_enabled
+            and result.status not in {"disabled", "throttled"}
+            and missing_profile_fields
+        ):
+            page_timeout_seconds = float(
+                os.getenv("WRAPPER_LINKEDIN_PAGE_SCRAPE_TIMEOUT_SECONDS", "10")
+            )
+            page_meta = _scrape_linkedin_page_metadata(
+                normalized_url,
+                timeout_seconds=max(1.0, page_timeout_seconds),
+            )
+            result.provider_metadata["page_scrape"] = {
+                k: v for k, v in page_meta.items() if k not in {"og_title", "page_title"}
+            }
+            scraped_fields = []
+            for field in ("current_job_title", "current_company"):
+                if not result.updates.get(field) and page_meta.get(field):
+                    result.updates[field] = page_meta[field]
+                    scraped_fields.append(field)
+            if not result.updates.get("profile_photo_url") and page_meta.get("profile_photo_url"):
+                result.updates["profile_photo_url"] = page_meta["profile_photo_url"]
+                scraped_fields.append("profile_photo_url")
+            if scraped_fields:
+                if result.status == "failed":
+                    result.status = "partial"
+                    result.message = "LinkedIn enrichment completed with partial profile data."
+                LOG.info(
+                    "linkedin_page_scrape_applied mentor_id=%s fields=%s",
+                    mentor_id,
+                    scraped_fields,
                 )
 
         if result.status == "success":

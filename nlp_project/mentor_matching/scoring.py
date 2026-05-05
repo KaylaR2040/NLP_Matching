@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import re
-from typing import Dict, Optional, Sequence, Set, Tuple
+from functools import lru_cache
+from typing import Dict, FrozenSet, List, Optional, Sequence, Set, Tuple
 
 from .constants import (
     ADJACENCY_PENALTY,
@@ -67,6 +68,173 @@ HIGH_INFORMATION_FAMILIES = {
     "embedded_firmware",
 }
 
+# Representative phrases that describe what each canonical domain looks like in a job title.
+# Used to semantically infer a person's domain even when they don't use the exact keywords
+# (e.g. "Semiconductor Design Engineer" → asic, even without the word "ASIC").
+DOMAIN_SEED_PHRASES: Dict[str, List[str]] = {
+    "analog": [
+        "analog circuit design engineer",
+        "analog IC designer integrated circuit",
+        "analog mixed-signal design engineer",
+        "linear circuit analog design",
+    ],
+    "mixed_signal": [
+        "mixed signal IC design engineer",
+        "data converter ADC DAC design",
+        "analog digital mixed signal integrated circuit",
+    ],
+    "rf": [
+        "RF engineer radio frequency design",
+        "wireless communications RF engineer",
+        "antenna microwave RF design engineer",
+        "radio frequency integrated circuit engineer",
+        "5G LTE wireless radio systems engineer",
+    ],
+    "power_management_ic": [
+        "power management IC design engineer",
+        "DC-DC converter voltage regulator PMIC design",
+        "power semiconductor IC engineer",
+    ],
+    "asic": [
+        "ASIC design engineer custom chip silicon",
+        "VLSI chip design semiconductor engineer",
+        "custom silicon tape-out design engineer",
+        "semiconductor circuit design engineer",
+    ],
+    "rtl": [
+        "RTL digital design engineer Verilog",
+        "SystemVerilog HDL digital design",
+        "digital verification engineer UVM",
+        "logic design RTL engineer",
+    ],
+    "fpga": [
+        "FPGA design engineer programmable logic",
+        "Xilinx Altera FPGA firmware engineer",
+        "FPGA digital design implementation",
+    ],
+    "embedded_firmware": [
+        "embedded software firmware engineer",
+        "firmware microcontroller embedded systems developer",
+        "RTOS embedded bare metal engineer",
+        "embedded IoT systems engineer",
+    ],
+    "power_systems": [
+        "power systems electrical grid engineer",
+        "renewable energy utility power engineer",
+        "power electronics inverter converter engineer",
+        "high voltage power infrastructure engineer",
+    ],
+    "ml_ai": [
+        "machine learning AI engineer researcher",
+        "deep learning neural network engineer",
+        "artificial intelligence data scientist engineer",
+        "NLP computer vision ML engineer",
+    ],
+    "software": [
+        "software engineer developer",
+        "backend cloud platform software engineer",
+        "full stack web application developer",
+        "software development engineer SDE",
+    ],
+    "signal_processing": [
+        "digital signal processing DSP engineer",
+        "communications systems signal processing engineer",
+        "radar sonar signal processing engineer",
+        "image video signal processing engineer",
+    ],
+    "compute_hw": [
+        "computer architecture processor design engineer",
+        "CPU GPU microprocessor hardware architect",
+        "hardware computer architecture engineer",
+        "chip microarchitecture design engineer",
+    ],
+    "robotics": [
+        "robotics autonomous systems engineer",
+        "controls mechatronics robotics engineer",
+        "autonomous vehicle robot engineer",
+        "motion control robotics software engineer",
+    ],
+    "cyber": [
+        "cybersecurity information security engineer",
+        "network security penetration testing engineer",
+        "security researcher cryptography engineer",
+        "information security analyst engineer",
+    ],
+}
+
+# Module-level cache for seed phrase embeddings — computed once on first use.
+_DOMAIN_SEED_EMBEDDINGS: Optional[Dict[str, List[List[float]]]] = None
+
+
+def _load_domain_seed_embeddings() -> Dict[str, List[List[float]]]:
+    global _DOMAIN_SEED_EMBEDDINGS
+    if _DOMAIN_SEED_EMBEDDINGS is not None:
+        return _DOMAIN_SEED_EMBEDDINGS
+    from .embeddings import bulk_encode
+    all_phrases: List[str] = []
+    order: List[str] = []
+    counts: List[int] = []
+    for domain, phrases in DOMAIN_SEED_PHRASES.items():
+        all_phrases.extend(phrases)
+        order.append(domain)
+        counts.append(len(phrases))
+    all_vecs = bulk_encode(all_phrases)
+    result: Dict[str, List[List[float]]] = {}
+    idx = 0
+    for domain, count in zip(order, counts):
+        result[domain] = all_vecs[idx: idx + count]
+        idx += count
+    _DOMAIN_SEED_EMBEDDINGS = result
+    return result
+
+
+def _strip_title_noise(title: str) -> str:
+    """Remove seniority and company noise before embedding a job title."""
+    noise = {
+        "sr", "senior", "junior", "jr", "principal", "staff", "lead",
+        "director", "manager", "vp", "vice", "president", "head",
+        "associate", "intern", "co-op", "coop", "ii", "iii", "iv", "i",
+        "at", "the", "and", "of", "for",
+    }
+    tokens = re.findall(r"[a-z0-9]+", (title or "").lower())
+    return " ".join(t for t in tokens if t not in noise)
+
+
+@lru_cache(maxsize=512)
+def _infer_domains_from_title(title: str, threshold: float = 0.50) -> FrozenSet[str]:
+    """Semantically infer canonical domains from a job title string.
+
+    Embeds the (noise-stripped) title and scores it against seed phrases for each
+    domain.  Returns the domains whose best seed-phrase similarity clears the
+    threshold, capped at the three closest domains so one generic title can't
+    claim every field.
+
+    Uses lru_cache so each unique title is encoded only once across N*M pair calls.
+    """
+    from .embeddings import bulk_encode, semantic_similarity
+
+    clean = _strip_title_noise(title)
+    if not clean:
+        return frozenset()
+
+    title_vecs = bulk_encode([clean])
+    if not title_vecs or not title_vecs[0]:
+        return frozenset()
+    title_vec = title_vecs[0]
+
+    seed_embeddings = _load_domain_seed_embeddings()
+    scored: List[tuple[float, str]] = []
+    for domain, seed_vecs in seed_embeddings.items():
+        if not seed_vecs:
+            continue
+        best = max(semantic_similarity(title_vec, sv) for sv in seed_vecs)
+        if best >= threshold:
+            scored.append((best, domain))
+
+    # Take at most the 3 highest-scoring domains to avoid over-assigning.
+    scored.sort(reverse=True)
+    return frozenset(domain for _, domain in scored[:3])
+
 
 def _normalize_items(values: Sequence[str]) -> Set[str]:
     return {str(value).strip().lower() for value in values if str(value).strip()}
@@ -120,12 +288,20 @@ def _canonicalize_domain_token(token: str) -> str:
     groups = {
         "analog": {"analog", "analogic"},
         "mixed_signal": {"mixed", "mixedsignal", "mixedsignals", "ams", "ic", "ics"},
-        "rf": {"rf", "wireless", "antenna", "transceiver", "microwave", "mmwave"},
-        "power_management_ic": {"pmic", "powermanagement", "powermanagement", "regulator", "regulators"},
-        "asic": {"asic", "vlsi", "semiconductor", "silicon"},
-        "rtl": {"rtl", "verilog", "systemverilog", "hdl", "uvm"},
-        "fpga": {"fpga", "fpgas"},
-        "embedded_firmware": {"embedded", "firmware", "microcontroller", "baremetal", "rtos"},
+        # "radio" and "frequency" added so "radio frequency" written in full English
+        # still resolves to this canonical, not silently dropped.
+        "rf": {
+            "rf", "wireless", "antenna", "transceiver", "microwave", "mmwave",
+            "radio", "frequency", "phased", "radar", "lidar", "5g", "lte",
+        },
+        "power_management_ic": {"pmic", "powermanagement", "regulator", "regulators", "dcdc", "ldo"},
+        "asic": {"asic", "vlsi", "semiconductor", "silicon", "tapeout", "chip", "chips"},
+        "rtl": {"rtl", "verilog", "systemverilog", "hdl", "uvm", "verification"},
+        "fpga": {"fpga", "fpgas", "xilinx", "altera", "vivado"},
+        "embedded_firmware": {
+            "embedded", "firmware", "microcontroller", "baremetal", "rtos",
+            "iot", "mcu", "stm32", "arduino", "bare",
+        },
         "power_systems": {
             "power",
             "grid",
@@ -137,28 +313,35 @@ def _canonicalize_domain_token(token: str) -> str:
             "railway",
             "infrastructure",
             "transportation",
+            "inverter",
+            "converter",
         },
-        "ml_ai": {"ml", "ai", "machine", "learning", "neural", "llm"},
-        "software": {"software", "backend", "frontend", "fullstack", "app", "application", "web", "cloud"},
+        "ml_ai": {"ml", "ai", "machine", "learning", "neural", "llm", "deep", "nlp", "cv"},
+        "software": {
+            "software", "backend", "frontend", "fullstack", "app", "application",
+            "web", "cloud", "devops", "sre", "platform",
+        },
         "signal_processing": {
-            "rf",
+            # Note: "rf" intentionally omitted here — it resolves to the "rf" canonical above.
             "signal",
             "signals",
             "communications",
-            "wireless",
-            "transceiver",
             "sensing",
             "sensor",
             "dsp",
             "filter",
             "filters",
+            "modulation",
+            "demodulation",
+            "waveform",
         },
         "compute_hw": {
             "architecture", "microarchitecture", "processor",
             "microprocessor", "cpu", "cache", "pipelining", "ipc", "isa",
+            "gpu", "accelerator",
         },
-        "robotics": {"robotics", "autonomy", "autonomous", "controls"},
-        "cyber": {"cybersecurity", "security", "infosec"},
+        "robotics": {"robotics", "autonomy", "autonomous", "controls", "mechatronics", "drone"},
+        "cyber": {"cybersecurity", "security", "infosec", "cryptography", "pentest"},
     }
     for canonical, aliases in groups.items():
         if key in aliases:
@@ -197,6 +380,12 @@ def _weighted_jaccard_similarity(set_a: Set[str], set_b: Set[str]) -> float:
     return numer / denom
 
 
+_STUDENT_ROLES = frozenset({
+    "student", "undergraduate", "undergrad", "graduate student",
+    "grad student", "phd student", "ms student", "bs student",
+})
+
+
 def _industry_niche_similarity(mentee: Mentee, mentor: Mentor) -> tuple[float, bool, Set[str], Set[str]]:
     mentee_terms = _technical_token_set(
         list(mentee.interests)
@@ -209,6 +398,18 @@ def _industry_niche_similarity(mentee: Mentee, mentor: Mentor) -> tuple[float, b
         + list(mentor.domain_tags)
         + [mentor.role, mentor.professional_experience, mentor.goals]
     )
+
+    # Supplement keyword extraction with semantic title inference.
+    # This catches domain terms people didn't write with exact keywords —
+    # e.g. "Semiconductor Design Engineer" → asic, "Wireless Systems Architect" → rf.
+    if mentor.role:
+        mentor_terms = mentor_terms | set(_infer_domains_from_title(mentor.role))
+
+    # For mentees: only infer from role if they have a real job title (not "Student").
+    mentee_role_clean = (mentee.role or "").strip().lower()
+    if mentee_role_clean and mentee_role_clean not in _STUDENT_ROLES:
+        mentee_terms = mentee_terms | set(_infer_domains_from_title(mentee.role))
+
     if not mentee_terms or not mentor_terms:
         return 0.0, False, mentee_terms, mentor_terms
     return _weighted_jaccard_similarity(mentee_terms, mentor_terms), True, mentee_terms, mentor_terms
