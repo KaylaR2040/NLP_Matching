@@ -7,20 +7,51 @@ steps:
       - us-central1-docker.pkg.dev
       - --quiet
 
+  # Pull the :latest cache image before building.
+  # Failure is fine (first build or tag not yet pushed) — || true prevents abort.
   - name: gcr.io/cloud-builders/docker
+    id: pull-cache
+    entrypoint: bash
     args:
-      - build
-      - -f
-      - wrapper/backend/Dockerfile
-      - -t
-      - $_IMAGE_URI
-      - .
+      - -c
+      - |
+        LATEST_URI=$(echo "$_IMAGE_URI" | sed 's/:[^:]*$/:latest/')
+        echo "Pulling cache from $LATEST_URI"
+        docker pull "$LATEST_URI" || true
+
+  # Build using the :latest layer cache.
+  # --cache-from means pip install + model download are reused when
+  # requirements.txt is unchanged — cutting build time from ~8 min to ~1 min.
+  # Also tag as :latest so the next build can use this image as its cache.
+  - name: gcr.io/cloud-builders/docker
+    id: build
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        LATEST_URI=$(echo "$_IMAGE_URI" | sed 's/:[^:]*$/:latest/')
+        docker build \
+          -f wrapper/backend/Dockerfile \
+          --cache-from "$LATEST_URI" \
+          -t "$_IMAGE_URI" \
+          -t "$LATEST_URI" \
+          .
     timeout: 1600s
 
+  # Push the commit-SHA tag (used by Cloud Run deploy).
   - name: gcr.io/cloud-builders/docker
     args:
       - push
       - $_IMAGE_URI
+
+  # Push the :latest tag so it's available as cache for the next deploy.
+  - name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        LATEST_URI=$(echo "$_IMAGE_URI" | sed 's/:[^:]*$/:latest/')
+        docker push "$LATEST_URI"
 
 images:
   - $_IMAGE_URI
