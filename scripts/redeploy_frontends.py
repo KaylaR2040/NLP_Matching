@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-DEFAULT_BACKEND_URL = "https://nlp-mentor-backend-196350198368.us-central1.run.app"
+DEFAULT_BACKEND_URL = "https://nlp-mentor-backend-55soihtqaq-uc.a.run.app"
 DEFAULT_FIREBASE_PROJECT_ID = "nlp-mentor-2026-55d28"
 
 

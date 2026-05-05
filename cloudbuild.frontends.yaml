@@ -2,9 +2,9 @@ options:
   logging: CLOUD_LOGGING_ONLY
 
 substitutions:
-  _FIREBASE_PROJECT_ID: replace-with-your-firebase-project-id
-  _WRAPPER_API_BASE_URL: https://api.example.com
-  _BACKEND_API_BASE_URL: https://api.example.com
+  _FIREBASE_PROJECT_ID: nlp-mentor-2026-55d28
+  _WRAPPER_API_BASE_URL: https://nlp-mentor-backend-55soihtqaq-uc.a.run.app
+  _BACKEND_API_BASE_URL: https://nlp-mentor-backend-55soihtqaq-uc.a.run.app
 
 steps:
   - id: build-admin
