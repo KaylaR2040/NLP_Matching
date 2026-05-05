@@ -9,15 +9,16 @@ steps:
 
   # Pull the :latest cache image before building.
   # Failure is fine (first build or tag not yet pushed) — || true prevents abort.
+  # Note: $$ escapes to a single $ in Cloud Build bash steps.
   - name: gcr.io/cloud-builders/docker
     id: pull-cache
     entrypoint: bash
     args:
       - -c
       - |
-        LATEST_URI=$(echo "$_IMAGE_URI" | sed 's/:[^:]*$/:latest/')
-        echo "Pulling cache from $LATEST_URI"
-        docker pull "$LATEST_URI" || true
+        LATEST_URI=$$(echo "$_IMAGE_URI" | sed 's/:[^:]*$$/:latest/')
+        echo "Pulling cache from $$LATEST_URI"
+        docker pull "$$LATEST_URI" || true
 
   # Build using the :latest layer cache.
   # --cache-from means pip install + model download are reused when
@@ -29,12 +30,12 @@ steps:
     args:
       - -c
       - |
-        LATEST_URI=$(echo "$_IMAGE_URI" | sed 's/:[^:]*$/:latest/')
+        LATEST_URI=$$(echo "$_IMAGE_URI" | sed 's/:[^:]*$$/:latest/')
         docker build \
           -f wrapper/backend/Dockerfile \
-          --cache-from "$LATEST_URI" \
+          --cache-from "$$LATEST_URI" \
           -t "$_IMAGE_URI" \
-          -t "$LATEST_URI" \
+          -t "$$LATEST_URI" \
           .
     timeout: 1600s
 
@@ -50,8 +51,8 @@ steps:
     args:
       - -c
       - |
-        LATEST_URI=$(echo "$_IMAGE_URI" | sed 's/:[^:]*$/:latest/')
-        docker push "$LATEST_URI"
+        LATEST_URI=$$(echo "$_IMAGE_URI" | sed 's/:[^:]*$$/:latest/')
+        docker push "$$LATEST_URI"
 
 images:
   - $_IMAGE_URI
