@@ -266,7 +266,7 @@ class _MentorManagerScreenState extends State<MentorManagerScreen> {
         return AlertDialog(
           title: const Text('Deactivate Mentor'),
           content: Text(
-            'Deactivate ${mentor.fullName}?\n\nThe record will be hidden from active lists but can be restored later or re-imported from CSV.',
+            'Deactivate ${mentor.fullName}?\n\nThe record will be hidden from active lists but can be restored.',
           ),
           actions: [
             TextButton(
