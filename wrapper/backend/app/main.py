@@ -58,8 +58,6 @@ from .github_sync import GitHubSyncConfig, GitHubSyncService
 from .google_form_forwarder import (
     MENTEE_FIELD_ORDER,
     MENTEE_PREFILLED_LINK,
-    MENTOR_FIELD_ORDER,
-    MENTOR_PREFILLED_LINK,
     build_google_form_config,
     submit_to_google_form,
 )
@@ -1817,41 +1815,11 @@ def submit_public_mentor_form(payload: Dict[str, Any]) -> Dict[str, Any]:
     # Save to Neon mentors table (best-effort — does not block form submission).
     _save_mentor_form_to_db(data, submission_id, submitted_at)
 
-    try:
-        prefilled_link = (
-            os.getenv("MENTOR_GOOGLE_FORM_PREFILLED_LINK", "").strip()
-            or MENTOR_PREFILLED_LINK
-        )
-        config = build_google_form_config(
-            form_name="mentor",
-            env_prefix="MENTOR_GOOGLE_FORM",
-            prefilled_link=prefilled_link,
-            field_order=MENTOR_FIELD_ORDER,
-            default_enabled=True,
-            # Not required: DB is now the primary store. Google Form is best-effort.
-            # Set MENTOR_GOOGLE_FORM_REQUIRED=true in env to re-enable strict mode.
-            default_required=False,
-        )
-        google_form = submit_to_google_form(
-            config,
-            mentor_record,
-            timeout_seconds=GOOGLE_FORM_TIMEOUT_SECONDS,
-        )
-    except Exception as exc:
-        LOG.warning("mentor_google_form_failed mentor_id=%s error=%s", submission_id, exc)
-        google_form = {"forwarded": False, "skipped": False, "error": str(exc)}
-        if os.getenv("MENTOR_GOOGLE_FORM_REQUIRED", "").strip().lower() in {"1", "true", "yes"}:
-            raise HTTPException(
-                status_code=502,
-                detail=f"Google Form submission failed: {exc}",
-            ) from exc
-
     return {
         "success": True,
         "message": "Mentor application submitted successfully",
         "mentor_id": submission_id,
         "data": mentor_record,
-        "google_form": google_form,
     }
 
 
