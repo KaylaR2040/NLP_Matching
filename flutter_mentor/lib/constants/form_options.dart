@@ -41,11 +41,11 @@ class FormOptions {
     'Hardware / electronics',
     'Healthcare / medical devices',
     'Manufacturing',
-    'Other',
     'Robotics / autonomy',
     'Software engineering',
     'Startup / entrepreneurship',
     'Telecommunications',
+    'Other',
   ];
 
   static const List<String> studentsCountOptions = ['1 student', '2 students'];

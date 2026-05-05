@@ -47,11 +47,11 @@ class FormOptions {
     'Hardware / electronics',
     'Healthcare / medical devices',
     'Manufacturing',
-    'Other',
     'Robotics / autonomy',
     'Software engineering',
     'Startup / entrepreneurship',
     'Telecommunications',
+    'Other',
   ];
 
   // Help topics
