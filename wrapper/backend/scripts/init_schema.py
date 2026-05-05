@@ -136,8 +136,11 @@ CREATE TABLE IF NOT EXISTS mentee_submissions (
     about_yourself          TEXT,
     help_topics             TEXT,
     submitted_at            TIMESTAMPTZ DEFAULT NOW(),
-    extra_fields            JSONB
+    extra_fields            JSONB,
+    is_demo                 BOOLEAN DEFAULT FALSE
 );
+
+ALTER TABLE mentee_submissions ADD COLUMN IF NOT EXISTS is_demo BOOLEAN DEFAULT FALSE;
 
 CREATE INDEX IF NOT EXISTS mentee_submissions_email_idx ON mentee_submissions (email);
 CREATE INDEX IF NOT EXISTS mentee_submissions_submitted_at_idx ON mentee_submissions (submitted_at DESC);

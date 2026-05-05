@@ -1692,6 +1692,62 @@ def api_health() -> Dict[str, str]:
     return health()
 
 
+def _write_demo_mentees_csv(dest: Path) -> None:
+    """Write demo mentee records to dest as CSV for the matching engine.
+    Prefers DB rows tagged is_demo=TRUE; falls back to the static demo_mentees.csv."""
+    db_rows: List[Dict[str, Any]] = []
+    if MENTOR_STORAGE_MODE == "postgres" and MENTOR_DATABASE_URL:
+        try:
+            import psycopg
+            with psycopg.connect(MENTOR_DATABASE_URL) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT mentee_id, email, first_name, last_name, pronouns,
+                               education_level, graduation_semester, concentrations,
+                               student_orgs, about_yourself, industries_of_interest
+                        FROM mentee_submissions
+                        WHERE is_demo = TRUE
+                        ORDER BY submitted_at
+                        """
+                    )
+                    db_rows = [
+                        {
+                            "mentee_id": r[0], "email": r[1],
+                            "first_name": r[2], "last_name": r[3],
+                            "pronouns": r[4], "education_level": r[5],
+                            "graduation_semester": r[6], "concentrations": r[7],
+                            "student_orgs": r[8], "about_yourself": r[9],
+                            "industries_of_interest": r[10],
+                        }
+                        for r in cur.fetchall()
+                    ]
+        except Exception as exc:
+            LOG.warning("demo_mentees_db_read_failed error=%s", exc)
+
+    if db_rows:
+        import csv as _csv
+        headers = [
+            "email", "first_name", "last_name", "pronouns", "education_level",
+            "graduation_semester", "concentrations", "student_orgs",
+            "about_yourself", "industries_of_interest",
+        ]
+        with dest.open("w", newline="", encoding="utf-8") as f:
+            writer = _csv.DictWriter(f, fieldnames=headers, extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(db_rows)
+        return
+
+    # Fall back to static file if DB has no demo mentees yet.
+    demo_mentee_path = BACKEND_ROOT / "data" / "demo_mentees.csv"
+    if not demo_mentee_path.exists():
+        raise HTTPException(
+            status_code=503,
+            detail="Demo mentee data is not available. Contact the administrator.",
+        )
+    shutil.copy2(demo_mentee_path, dest)
+
+
 def _find_mentor_by_email(email: str) -> Optional[Dict[str, Any]]:
     normalized = email.strip().lower()
     if not normalized:
@@ -2490,13 +2546,7 @@ async def run_match(
             if mentee_file is not None:
                 _as_csv(mentee_file.filename or "mentees.csv", await mentee_file.read(), mentee_csv)
             elif is_demo_session:
-                demo_mentee_path = BACKEND_ROOT / "data" / "demo_mentees.csv"
-                if not demo_mentee_path.exists():
-                    raise HTTPException(
-                        status_code=503,
-                        detail="Demo mentee data is not available. Contact the administrator.",
-                    )
-                shutil.copy2(demo_mentee_path, mentee_csv)
+                _write_demo_mentees_csv(mentee_csv)
             else:
                 raise HTTPException(status_code=400, detail="mentee_file is required.")
             mentor_payload: Optional[bytes] = None

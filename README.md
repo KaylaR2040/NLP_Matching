@@ -11,13 +11,15 @@ Want to see how the matching system works without any setup?
 
 **Admin Dashboard (matching, mentor directory)**
 URL: https://nlp-admin.web.app
-Username: `eceaccount`
-Password: *(see `documentation/access/CREDENTIALS.md` — contact the project owner)*
 
-The demo account shows 12 fictional mentors (no real names or personal data).
-You can log in, browse the mentor directory, upload a sample mentee CSV, run the NLP matching algorithm, and see ranked assignments.
+```
+DEMO (NOT HELPFUL TO YOU):
+USERNAME: eceaccount
+PASSWORD: Purplecow2000!
+```
 
-Sample mentee CSV for testing: upload any CSV with columns `Name`, `Email`, `Concentration`, `Graduation Semester`, `Organizations` — or ask the project owner for a sample file.
+The demo account shows fictional mentors and mentees (no real names or personal data).
+Log in, browse the mentor directory, run the NLP matching algorithm, and see ranked assignments — no file upload needed.
 
 The public registration forms (no login required):
 - Mentor signup: https://nlp-mentor.web.app
@@ -57,18 +59,39 @@ Quick links:
 
 ---
 
+## Access & Credentials
+
+```
+GMAIL LOGIN (For Cloud Services — not needed to run):
+nlp.matching@gmail.com
+PASSWORD: [fill in]
+```
+
+```
+LOGIN INFO FOR MATCHING (dev/admin account):
+USERNAME: devaccount
+PASSWORD: [fill in]
+```
+
+```
+DEMO (NOT HELPFUL TO YOU):
+USERNAME: eceaccount
+PASSWORD: Purplecow2000!
+```
+
+Full credentials and connection strings are stored in
+`documentation/access/CREDENTIALS.md` (gitignored — never committed).
+See `documentation/access/ACCOUNT_TRANSITION.md` for IAM access setup.
+
 ## Accounts Overview
 
 | Service | Account | Notes |
 |---|---|---|
-| Google Cloud (GCP) | billing owner account | Credit card stays here — never shared |
-| GCP project IAM | project operator account | Editor role — can deploy, no billing access |
-| Neon Postgres | project operator account | Database owner |
+| Google Cloud (GCP) | `nlp.matching@gmail.com` | Owner — deploys backend |
+| GCP project IAM | `kaylaradu@gmail.com` | Co-owner |
+| Neon Postgres | `nlp.matching@gmail.com` | Database owner |
 | Firebase | via GCP IAM | No separate login needed |
-
-Credentials, passwords, and connection strings are stored locally in
-`documentation/access/CREDENTIALS.md` (gitignored — never committed).
-See `documentation/access/ACCOUNT_TRANSITION.md` for how to set up IAM access.
+| GitHub repo | `KaylaR2040` | Personal repo |
 
 ---
 
