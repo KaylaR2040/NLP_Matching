@@ -1862,10 +1862,11 @@ def _send_new_mentor_notification(data: Dict[str, Any], submission_id: str) -> N
       SMTP_PASSWORD              — Gmail App Password (16-char, not your login password)
       FORM_NOTIFICATION_TO_EMAIL — recipient (e.g. kngodfre@ncsu.edu)
     """
-    notify_to = os.getenv("FORM_NOTIFICATION_TO_EMAIL", "").strip()
+    notify_raw = os.getenv("FORM_NOTIFICATION_TO_EMAIL", "").strip()
+    recipients = [e.strip() for e in notify_raw.split(",") if e.strip()]
     smtp_user = os.getenv("SMTP_USER", "").strip()
     smtp_password = os.getenv("SMTP_PASSWORD", "").strip()
-    if not notify_to or not smtp_user or not smtp_password:
+    if not recipients or not smtp_user or not smtp_password:
         return
 
     first = str(data.get("firstName", "")).strip()
@@ -1883,7 +1884,7 @@ def _send_new_mentor_notification(data: Dict[str, Any], submission_id: str) -> N
     msg = MIMEMultipart("alternative")
     msg["Subject"] = f"New mentor application: {name}"
     msg["From"] = smtp_user
-    msg["To"] = notify_to
+    msg["To"] = ", ".join(recipients)
     msg.attach(MIMEText(f"""
 <h2>New Mentor Application</h2>
 <table style="border-collapse:collapse;font-family:sans-serif">
@@ -1901,8 +1902,8 @@ def _send_new_mentor_notification(data: Dict[str, Any], submission_id: str) -> N
             server.ehlo()
             server.starttls()
             server.login(smtp_user, smtp_password)
-            server.sendmail(smtp_user, notify_to, msg.as_string())
-        LOG.info("mentor_notification_sent to=%s mentor=%s", notify_to, name)
+            server.sendmail(smtp_user, recipients, msg.as_string())
+        LOG.info("mentor_notification_sent to=%s mentor=%s", recipients, name)
     except Exception as exc:
         LOG.warning("mentor_notification_failed mentor_id=%s error=%s", submission_id, exc)
 
