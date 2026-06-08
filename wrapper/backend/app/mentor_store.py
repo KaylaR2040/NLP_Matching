@@ -1277,22 +1277,16 @@ class MentorStore:
         backup_dir: Path = DEFAULT_MENTOR_BACKUP_DIR,
         storage_mode: str = "",
         database_url: str = "",
-        is_vercel: bool = False,
+        is_vercel: bool = False,  # unused, kept for call-site compatibility
     ) -> None:
         resolved_mode = _stringify(storage_mode).lower()
         url = _stringify(database_url)
         if not resolved_mode:
-            resolved_mode = "postgres" if (is_vercel or url) else "file"
+            resolved_mode = "postgres" if url else "file"
 
         if resolved_mode not in {"file", "postgres"}:
             raise MentorStoreError(
                 f"Unsupported mentor storage mode '{resolved_mode}'. Use 'file' or 'postgres'."
-            )
-
-        if is_vercel and resolved_mode != "postgres":
-            raise MentorStoreError(
-                "Vercel deployments require WRAPPER_MENTOR_STORAGE_MODE=postgres. "
-                "File-backed mentor storage is not durable in production."
             )
 
         if resolved_mode == "postgres":

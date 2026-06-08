@@ -114,11 +114,10 @@ PHD_PROGRAMS_PATH = Path(
 )
 PHD_PROGRAMS_PATH = _resolve_from_backend(str(PHD_PROGRAMS_PATH))
 DEFAULT_MAJORS_PATH = GRAD_PROGRAMS_PATH
-# In serverless/container runtimes (Vercel or Cloud Run), write backups to /tmp.
-# Cloud Run sets K_SERVICE; Vercel sets VERCEL.
+# On Cloud Run (K_SERVICE is set) write backups to /tmp so they survive container restarts.
 _DEFAULT_BACKUP_DIR = (
     Path("/tmp/nlp_matching_runtime/dev_file_backups")
-    if (os.getenv("VERCEL", "").strip() or os.getenv("K_SERVICE", "").strip())
+    if os.getenv("K_SERVICE", "").strip()
     else BACKEND_ROOT / "data" / "dev_file_backups"
 )
 DEV_BACKUP_DIR = Path(
@@ -214,9 +213,8 @@ GITHUB_SYNC_BRANCH = os.getenv("WRAPPER_GITHUB_SYNC_BRANCH", "main").strip() or 
 GITHUB_SYNC_TIMEOUT_SECONDS = float(
     os.getenv("WRAPPER_GITHUB_SYNC_TIMEOUT_SECONDS", "20")
 )
-# True on Vercel (VERCEL env set) and on Cloud Run (K_SERVICE env set).
-IS_SERVERLESS = bool(os.getenv("VERCEL", "").strip() or os.getenv("K_SERVICE", "").strip())
-IS_VERCEL = IS_SERVERLESS  # alias — all downstream references unchanged
+# True on Cloud Run (K_SERVICE is set by the platform).
+IS_SERVERLESS = bool(os.getenv("K_SERVICE", "").strip())
 
 
 def _parse_allowed_origins(raw_value: str) -> List[str]:
@@ -321,7 +319,7 @@ try:
         backup_dir=MENTOR_BACKUP_DIR,
         storage_mode=MENTOR_STORAGE_MODE,
         database_url=MENTOR_DATABASE_URL,
-        is_vercel=IS_VERCEL,
+        is_vercel=IS_SERVERLESS,
     )
 except MentorStoreError as exc:
     LOG.exception("mentor_storage_init_failed error=%s", exc)
@@ -745,7 +743,7 @@ def _durable_source(entry: Dict[str, Any]) -> str:
 
 def _writable_dev_path(path: Path) -> Path:
     path = path.resolve()
-    if IS_VERCEL:
+    if IS_SERVERLESS:
         return _runtime_override_path(path)
     return path
 
