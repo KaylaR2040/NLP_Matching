@@ -1857,6 +1857,55 @@ def _save_mentor_form_to_db(
         return {"saved": False, "reason": "error"}
 
 
+def _send_new_mentor_notification(data: Dict[str, Any], submission_id: str) -> None:
+    """Send an email to the program admin when a new mentor submits.
+
+    Env vars:
+      RESEND_API_KEY            — Resend API key (required)
+      FORM_NOTIFICATION_TO_EMAIL — recipient address (e.g. kngodfre@ncsu.edu)
+      MENTOR_NOTIFY_FROM        — sender address; defaults to onboarding@resend.dev
+                                  (only delivers to the Resend account owner in test
+                                  mode — verify a domain at resend.com/domains to
+                                  send to any recipient)
+    """
+    api_key = os.getenv("RESEND_API_KEY", "").strip()
+    notify_to = os.getenv("FORM_NOTIFICATION_TO_EMAIL", "").strip()
+    if not api_key or not notify_to:
+        return
+
+    from_addr = os.getenv("MENTOR_NOTIFY_FROM", "onboarding@resend.dev").strip()
+    first = str(data.get("firstName", "")).strip()
+    last = str(data.get("lastName", "")).strip()
+    name = f"{first} {last}".strip() or "Unknown"
+    mentor_email = str(data.get("email", "")).strip()
+    company = str(data.get("currentCompany", "")).strip()
+    title = str(data.get("currentJobTitle", "")).strip()
+    industry = str(data.get("industryFocusArea", "")).strip()
+
+    html_body = f"""
+<h2>New Mentor Application</h2>
+<table style="border-collapse:collapse;font-family:sans-serif">
+  <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Name</td><td>{name}</td></tr>
+  <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Email</td><td>{mentor_email}</td></tr>
+  <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Company</td><td>{company}</td></tr>
+  <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Title</td><td>{title}</td></tr>
+  <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Industry</td><td>{industry}</td></tr>
+  <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Submission ID</td><td style="font-size:0.85em;color:#555">{submission_id}</td></tr>
+</table>
+"""
+    try:
+        resend.api_key = api_key
+        resend.Emails.send({
+            "from": from_addr,
+            "to": notify_to,
+            "subject": f"New mentor application: {name}",
+            "html": html_body,
+        })
+        LOG.info("mentor_notification_sent to=%s mentor=%s", notify_to, name)
+    except Exception as exc:
+        LOG.warning("mentor_notification_failed mentor_id=%s error=%s", submission_id, exc)
+
+
 def _save_mentee_form_to_db(data: Dict[str, Any], submission_id: str, submitted_at: str) -> Dict[str, Any]:
     """Save a public mentee form submission to the mentee_submissions table.
 
@@ -1963,6 +2012,9 @@ def submit_public_mentor_form(payload: Dict[str, Any]) -> Dict[str, Any]:
                 "email": str(data.get("email", "")).strip().lower(),
             },
         )
+
+    if db_result.get("saved"):
+        _send_new_mentor_notification(data, submission_id)
 
     return {
         "success": True,
