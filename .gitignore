@@ -10,8 +10,7 @@ wrapper/backend/.env.*
 !wrapper/backend/.env.example
 
 # DOCUMENTATION (access credentials and developer-only docs — never commit)
-documentation/access/*
-documentation/developer/*
+./documentation/.*
 
 # Claude Code local session settings (may contain allowed commands with inline secrets)
 .claude/settings.local.json

@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import resend
 from uuid import uuid4
 from dataclasses import dataclass
 from io import BytesIO, StringIO
