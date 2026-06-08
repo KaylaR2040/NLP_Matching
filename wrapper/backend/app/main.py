@@ -15,7 +15,6 @@ import subprocess
 import sys
 import tempfile
 import time
-import resend
 from uuid import uuid4
 from dataclasses import dataclass
 from io import BytesIO, StringIO
@@ -1856,22 +1855,19 @@ def _save_mentor_form_to_db(
 
 
 def _send_new_mentor_notification(data: Dict[str, Any], submission_id: str) -> None:
-    """Send an email to the program admin when a new mentor submits.
+    """Send an email to the program admin when a new mentor submits via Gmail SMTP.
 
     Env vars:
-      RESEND_API_KEY            — Resend API key (required)
-      FORM_NOTIFICATION_TO_EMAIL — recipient address (e.g. kngodfre@ncsu.edu)
-      MENTOR_NOTIFY_FROM        — sender address; defaults to onboarding@resend.dev
-                                  (only delivers to the Resend account owner in test
-                                  mode — verify a domain at resend.com/domains to
-                                  send to any recipient)
+      SMTP_USER                  — Gmail address to send from (e.g. kaylaradu@gmail.com)
+      SMTP_PASSWORD              — Gmail App Password (16-char, not your login password)
+      FORM_NOTIFICATION_TO_EMAIL — recipient (e.g. kngodfre@ncsu.edu)
     """
-    api_key = os.getenv("RESEND_API_KEY", "").strip()
     notify_to = os.getenv("FORM_NOTIFICATION_TO_EMAIL", "").strip()
-    if not api_key or not notify_to:
+    smtp_user = os.getenv("SMTP_USER", "").strip()
+    smtp_password = os.getenv("SMTP_PASSWORD", "").strip()
+    if not notify_to or not smtp_user or not smtp_password:
         return
 
-    from_addr = os.getenv("MENTOR_NOTIFY_FROM", "onboarding@resend.dev").strip()
     first = str(data.get("firstName", "")).strip()
     last = str(data.get("lastName", "")).strip()
     name = f"{first} {last}".strip() or "Unknown"
@@ -1880,7 +1876,15 @@ def _send_new_mentor_notification(data: Dict[str, Any], submission_id: str) -> N
     title = str(data.get("currentJobTitle", "")).strip()
     industry = str(data.get("industryFocusArea", "")).strip()
 
-    html_body = f"""
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = f"New mentor application: {name}"
+    msg["From"] = smtp_user
+    msg["To"] = notify_to
+    msg.attach(MIMEText(f"""
 <h2>New Mentor Application</h2>
 <table style="border-collapse:collapse;font-family:sans-serif">
   <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Name</td><td>{name}</td></tr>
@@ -1890,15 +1894,14 @@ def _send_new_mentor_notification(data: Dict[str, Any], submission_id: str) -> N
   <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Industry</td><td>{industry}</td></tr>
   <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Submission ID</td><td style="font-size:0.85em;color:#555">{submission_id}</td></tr>
 </table>
-"""
+""", "html"))
+
     try:
-        resend.api_key = api_key
-        resend.Emails.send({
-            "from": from_addr,
-            "to": notify_to,
-            "subject": f"New mentor application: {name}",
-            "html": html_body,
-        })
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.ehlo()
+            server.starttls()
+            server.login(smtp_user, smtp_password)
+            server.sendmail(smtp_user, notify_to, msg.as_string())
         LOG.info("mentor_notification_sent to=%s mentor=%s", notify_to, name)
     except Exception as exc:
         LOG.warning("mentor_notification_failed mentor_id=%s error=%s", submission_id, exc)
