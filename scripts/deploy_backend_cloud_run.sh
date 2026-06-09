@@ -26,7 +26,7 @@ DEFAULT_ALLOWED_ORIGINS="https://admin.example.com,https://mentor.example.com,ht
 ALLOWED_ORIGINS="${WRAPPER_ALLOWED_ORIGINS:-$DEFAULT_ALLOWED_ORIGINS}"
 
 # Use a custom delimiter (##) so comma-separated origins are preserved.
-NOTIFY_EMAIL="${FORM_NOTIFICATION_TO_EMAIL:-kngodfre@ncsu.edu,kaylaradu@gmail.com}"
+NOTIFY_EMAIL="${FORM_NOTIFICATION_TO_EMAIL:-kngodfre@ncsu.edu,}"
 NON_SECRET_ENV_VARS="${NON_SECRET_ENV_VARS:-^##^WRAPPER_MENTOR_STORAGE_MODE=postgres##WRAPPER_NLP_PROJECT_DIR=/app/nlp_project##WRAPPER_MATCH_TIMEOUT_SECONDS=270##WRAPPER_SCRIPT_TIMEOUT_SECONDS=180##WRAPPER_REQUIRE_HTTPS=true##WRAPPER_ALLOWED_ORIGINS=${ALLOWED_ORIGINS}##FORM_NOTIFICATION_TO_EMAIL=${NOTIFY_EMAIL}}"
 
 # Sensitive values come from Secret Manager, injected into the Cloud Run revision.
