@@ -53,3 +53,4 @@ wrapper/backend/nlp_project/
 # OTHER
 .idea/
 .vscode/settings.json
+documentation/
